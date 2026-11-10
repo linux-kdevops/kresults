@@ -229,8 +229,10 @@ linux/                                   the project
 ```
 
 - A commit is named as `git describe --tags --match 'v[0-9]*'
-  --abbrev=12 --always` names it in a clone with the project's release
-  tags.
+  --abbrev=12 --always --dirty` names it in a clone with the project's
+  release tags. A tree with changes not committed is thus filed apart,
+  under a name that ends in `-dirty`, and `subject.commit` is the commit
+  the changes lie on.
 - A series is named by the Message-ID of its first message, without
   `<>`: the message posted, or the first of a local mbox. A Message-ID
   always holds an `@` and a commit's name never does. One that holds a

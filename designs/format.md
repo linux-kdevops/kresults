@@ -62,3 +62,15 @@ the version (`format/CHANGES.md`).
 - A `pass` has an exit status of 0 and a `skip` gives its reason. A `fail`
   may exit 0, since some tools exit 0 whatever they find and the producer
   reads the verdict from what they printed.
+- A tree with changes not committed is filed under its commit's name with
+  `-dirty`, which `git describe --dirty` gives. What ran was not the
+  commit, and its records must not pass for the commit's.
+
+## Open
+
+1. A configuration that fails. A `make tinyconfig` that fails writes no
+   `.config`, and an entry under a build has to carry the hash of one, so
+   the failure cannot be filed. A producer leaves no record of it.
+2. A `-dirty` directory against its commit. `validate` holds a directory
+   named by a hash to `subject.commit`, and does not read the hash in a
+   name that ends in `-dirty`.
