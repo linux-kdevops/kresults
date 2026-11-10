@@ -4,7 +4,8 @@
 
 This is version 1 of the format of the records
 ([CHANGES.md](CHANGES.md)), which this repository keeps on its `records`
-branch. Any engine may write them.
+branch. Any producer may write them: whatever runs the tools, a CI system
+or a developer's own scripts.
 [record.schema.json](record.schema.json),
 [series.schema.json](series.schema.json) and
 [objects.schema.json](objects.schema.json) define each field.
@@ -20,7 +21,7 @@ run equal to an entry in all of these is added to its `invocations`,
 and any difference makes a new entry. Two entries that differ only in
 what they reported are a flaky test or tool.
 
-The engine that ran a command is not part of the entry. An invocation
+The producer that ran a command is not part of the entry. An invocation
 names it, with the lab, the run, the time and the machine.
 
 sparse on `init/main.o` of a series, run by two labs with the same
@@ -73,7 +74,7 @@ sparse, built two ways:
 }
 ```
 
-An engine adds a run to the entry it equals, or adds an entry, and
+A producer adds a run to the entry it equals, or adds an entry, and
 writes the file whole. An entry of a series is set against the entry
 of its base that has the same tools, command and environment, so a
 series is compared only with a base that ran what it ran. A reader
@@ -135,7 +136,7 @@ it made is the `config` of the command that runs next.
   failing. A comparison counts it neither introduced nor fixed.
 
 `exit` is the command's exit status, and a test's is 1 when it failed,
-else 0. A run stopped on purpose, as when its engine cancels it, leaves
+else 0. A run stopped on purpose, as when its producer cancels it, leaves
 nothing.
 
 ## Output
@@ -151,7 +152,7 @@ nothing.
 The records may be public. `output`, `command` and `env`:
 
 - give paths in the tree relative to it, and leave out the absolute
-  paths of the build directory and of the engine;
+  paths of the build directory and of the producer;
 - write the home directory as `~`;
 - name no host.
 
@@ -159,7 +160,7 @@ The records may be public. `output`, `command` and `env`:
 
 Each invocation carries every field:
 
-- `producer`: the name and version of the engine that ran the command;
+- `producer`: the name and version of what ran the command;
 - `origin`: the lab, by the name it records under, in lowercase
   letters, digits and `-`;
 - `run`: the producer's name for the run, such as its run id;

@@ -29,9 +29,8 @@ lasts goes to `designs/` before the work ends.
 
 ## The format
 
-A change to the format raises its version and adds an entry to
-`format/CHANGES.md`, once an engine writes the version before. Ask the
-owner before any change to it.
+Ask the owner before any change to the format. `designs/format.md` says
+when a change raises its version.
 
 ## Commits
 

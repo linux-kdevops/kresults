@@ -14,7 +14,7 @@ and what the tool printed, so a result can be set against the same run
 on another commit, whoever ran it.
 
 [format/README.md](format/README.md) is the format, and the JSON Schemas
-beside it define each field. Any engine may write records in it.
+beside it define each field. Any producer may write records in it.
 [designs/format.md](designs/format.md) lists the decisions still open.
 
 Patches go to <kdevops@lists.linux.dev>, written as kdevops-ng's

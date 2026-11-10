@@ -2,9 +2,9 @@
 
 # The format: decisions
 
-`format/README.md` is the format as it stands. No engine writes version 1
-yet, so a decision changes it in place. Once one does, a change raises the
-version (`format/CHANGES.md`).
+`format/README.md` is the format as it stands. No producer writes version
+1 yet, so a decision changes it in place. Once one does, a change raises
+the version (`format/CHANGES.md`).
 
 ## Decided
 
@@ -19,6 +19,8 @@ version (`format/CHANGES.md`).
 - A record names its build in `subject.build` as well as in its path. The
   path is how a record is found, and the field lets one be read, and
   reported on, away from its directory.
+- What writes records is a producer, the schema's word. kdevops-ng, one
+  of them, calls what runs its workflows an engine.
 
 ## Open
 
@@ -26,13 +28,10 @@ version (`format/CHANGES.md`).
    identity, and `make --jobs` prints two errors in either order, so one
    failing build can leave an entry for each order.
 2. Two writers on one branch. A run writes whole each record it adds to,
-   so two engines that push at once change the same files. The format does
-   not say what a writer does when its push is refused.
+   so two producers that push at once change the same files. The format
+   does not say what a writer does when its push is refused.
 3. A list of tools beside the naming rule. "As the tool names itself"
    leaves `W=1` under `clang/` or `gcc/`, the analyzer that `clang-tidy`
    runs, and `CLIPPY=1` to each writer's reading.
-4. The word for what writes records. The text says engine and the schema
-   says `producer`. kdevops-ng, which is to write them, calls what runs
-   its workflows an engine as well.
-5. The `config` a build keeps. A build holds one `config` file, the last,
+4. The `config` a build keeps. A build holds one `config` file, the last,
    while entries made under earlier ones stay in its records.
