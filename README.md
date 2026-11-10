@@ -15,7 +15,7 @@ on another commit, whoever ran it.
 
 [format/README.md](format/README.md) is the format, and the JSON Schemas
 beside it define each field. Any producer may write records in it, and
-`format/validate.py --records DIR` checks a tree of them.
+`nix run .#validate -- --records DIR` checks a tree of them.
 [designs/format.md](designs/format.md) holds the decisions on the format.
 
 Patches go to <kdevops@lists.linux.dev>, written as kdevops-ng's

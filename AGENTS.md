@@ -32,6 +32,11 @@ lasts goes to `designs/` before the work ends.
 Ask the owner before any change to the format. `designs/format.md` says
 when a change raises its version.
 
+## Checks
+
+`nix flake check` runs the lint (black, ruff and pyright) and the tests.
+Run it before each commit that changes `format/` or `tests/`.
+
 ## Commits
 
 An agent also keeps these:
