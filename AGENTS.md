@@ -11,10 +11,10 @@ github.com/linux-kdevops/kresults.
 
 - `format/` is for whoever writes or reads records: the format, each
   fact once, and the JSON Schemas that define its fields.
-- `designs/` is for whoever changes the format, agent or person: the open
-  decisions, each with what bears on it. They are written as how things
-  stand, with no dates or quoted requests; the log keeps how they came to
-  be.
+- `designs/` is for whoever changes the format, agent or person: the
+  decisions, taken and open, each with what bears on it. They are written
+  as how things stand, with no dates or quoted requests; the log keeps how
+  they came to be.
 - This file is the map, and holds what only an agent needs.
 
 Notes an agent keeps outside the repository stay there; what in them
@@ -23,7 +23,7 @@ lasts goes to `designs/` before the work ends.
 ## Read first
 
 - `format/README.md`: the format.
-- `designs/format.md`: the open decisions on it.
+- `designs/format.md`: the decisions on it, taken and open.
 - [designs/writing.md] of kdevops-ng: how commits, docs and comments are
   written here too.
 
