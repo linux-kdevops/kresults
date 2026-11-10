@@ -193,6 +193,7 @@ linux/                                   the project
 ├── v7.3-2-g1da4e6e1d71d/                a commit
 │   ├── series.json                      how it came, and its base
 │   ├── checkpatch.pl.json               a tool that reads no build
+│   ├── make/htmldocs/filesystems.json   a make target that reads none
 │   ├── tinyconfig/x86_64/clang/         a build: configuration, ARCH, compiler
 │   │   ├── config                       its .config
 │   │   ├── objects.json                 what it compiles of the series
@@ -200,8 +201,7 @@ linux/                                   the project
 │   │   │   ├── tinyconfig.json          make tinyconfig
 │   │   │   ├── all.json                 make, the build
 │   │   │   ├── dir-pkg.json             make dir-pkg
-│   │   │   ├── checkstack.json
-│   │   │   └── htmldocs/filesystems.json
+│   │   │   └── checkstack.json
 │   │   ├── clang-tidy/init/main.o.json
 │   │   └── sparse/init/main.o.json      make C=2 init/main.o
 │   ├── block-layer/nvm-express-driver/x86_64/clang/
@@ -232,10 +232,10 @@ linux/                                   the project
   BLOCK LAYER. A profile for no entry's code is named for what it
   configures, `fstests` for the guest fstests runs in. The configuration
   ends at the first directory named for an `ARCH` with one named for a
-  compiler below it, so no profile takes either name. A record under a
-  build names it again in `subject.build`. The path is how a record is
-  found, and the field lets one be read, and reported on, away from its
-  directory.
+  compiler below it, so no profile takes either name, nor a tool's. A
+  record under a build names it again in `subject.build`. The path is how
+  a record is found, and the field lets one be read, and reported on, away
+  from its directory.
 - A record lies under the build its command ran in, and each of its
   entries has that build's `config`. A record of a tool that reads no
   build lies directly under the commit, and its entries have none:
@@ -262,6 +262,53 @@ linux/                                   the project
   record, as `checkpatch.pl` is with and without `--strict`.
 - A directory or file name is at most 255 bytes, the limit of Linux
   filesystems.
+
+## Known commands
+
+The rules above name a record and place it, and for some commands they
+take a reading. Each command a producer runs is listed here, and a command
+the list lacks gets its line before a producer files its record.
+
+A command lies under a build when it reads the `.config` or what the
+build made, and under the commit when it reads neither. kbuild's
+`no-dot-config-targets` names the make targets that read no `.config`.
+`checkstack` is one of them and still lies under a build, since it reads
+`vmlinux`.
+
+Under a build:
+
+| Command                                 | Record                      |
+| --------------------------------------- | --------------------------- |
+| `make TARGET`, to configure             | `make/TARGET.json`          |
+| `scripts/kconfig/merge_config.sh`       | `merge_config.sh.json`      |
+| `make`                                  | `make/all.json`             |
+| `make dir-pkg`                          | `make/dir-pkg.json`         |
+| `make checkstack`                       | `make/checkstack.json`      |
+| `make rusttest`                         | `make/rusttest.json`        |
+| `make W=1e OBJ`                         | `clang/OBJ.json`, or `gcc/` |
+| `make C=2 OBJ`                          | `sparse/OBJ.json`           |
+| `make C=2 CHECK=smatch OBJ`             | `smatch/OBJ.json`           |
+| `make C=2 CHECK=scripts/coccicheck OBJ` | `coccicheck/OBJ.json`       |
+| `clang-tidy FILE`                       | `clang-tidy/OBJ.json`       |
+| `check -s SECTION TEST`                 | `fstests/SECTION/TEST.json` |
+
+Under the commit:
+
+| Command                             | Record                       |
+| ----------------------------------- | ---------------------------- |
+| `scripts/checkpatch.pl --git RANGE` | `checkpatch.pl.json`         |
+| `scripts/get_maintainer.pl PATCH`   | `get_maintainer.pl.json`     |
+| `scripts/kernel-doc FILE`           | `kernel-doc/FILE.json`       |
+| `scripts/checkincludes.pl FILE`     | `checkincludes.pl/FILE.json` |
+| `make SPHINXDIRS=DIR htmldocs`      | `make/htmldocs/DIR.json`     |
+| `make rustfmtcheck`                 | `make/rustfmtcheck.json`     |
+
+Under a series:
+
+| Command     | Record           |
+| ----------- | ---------------- |
+| `b4 mbox`   | `b4/mbox.json`   |
+| `b4 shazam` | `b4/shazam.json` |
 
 ## A commit and its series
 

@@ -33,26 +33,9 @@ the version (`format/CHANGES.md`).
 - A build keeps only the `.config` of its latest run. An entry made under
   an earlier one keeps its hash, which still tells that the two were
   configured differently, and a comparison uses no more.
-
-## Open
-
-1. A table of tools beside the naming rule. A record is named for the
-   tool "as the tool names itself", and for some commands that takes a
-   reading. `make W=1e init/main.o` reports the compiler's warnings and is
-   filed as `clang/init/main.o.json`. A second producer can as well file
-   it as `make/init/main.o.json`, for the command, or as
-   `w1/init/main.o.json`, for the flag. Two producers that read the rule
-   differently file one result in two places, and nothing compares the
-   two. A table in the format, a line for each known command, turns the
-   reading into a lookup:
-
-   | Command                             | Record                        |
-   | ----------------------------------- | ----------------------------- |
-   | `make W=1e init/main.o`             | `clang/init/main.o.json`      |
-   | `make C=2 init/main.o`              | `sparse/init/main.o.json`     |
-   | `make C=2 CHECK=smatch init/main.o` | `smatch/init/main.o.json`     |
-   | `make CLIPPY=1`                     | `clippy.json`                 |
-   | `clang-tidy init/main.c`            | `clang-tidy/init/main.o.json` |
-   | `scripts/checkpatch.pl --git RANGE` | `checkpatch.pl.json`          |
-
-   A tool the table lacks gets its line before a producer files it.
+- The format lists each known command with its record and where the
+  record lies. The naming rule takes a reading for some commands, as for
+  `make W=1e` on an object, and two producers that read it differently
+  file one result twice. A command lies under a build when it reads the
+  `.config` or what the build made: kbuild's `no-dot-config-targets` and
+  each script's source say which.
