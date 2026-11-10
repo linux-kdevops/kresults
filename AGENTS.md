@@ -4,9 +4,8 @@
 
 ## Project
 
-kresults is a format for what tools report on a source tree, kept so that
-a result can be set against the same run on another commit, whoever ran
-it. It lives at github.com/linux-kdevops/kresults.
+`README.md` says what kresults is. It lives at
+github.com/linux-kdevops/kresults.
 
 ## Where things are written
 
