@@ -26,22 +26,14 @@ the version (`format/CHANGES.md`).
   time `diff` prints. `make --jobs` prints two errors in either order, and
   the raw text would file one failing build once for each. A reader that
   sets a series against its base uses the same rule.
+- A producer whose push is refused fetches, adds its runs again and
+  pushes. A merge would conflict in every record two runs share, and each
+  conflict resolves the same way, by keeping both sides. That is the write
+  the producer already does, so it writes again and no person merges.
 
 ## Open
 
-1. What a producer does when its push is refused. A run writes whole each
-   record it adds to, so two producers that push at once have changed the
-   same files, and a merge conflicts in each. The options:
-   - merge by hand. Each conflict resolves the same way: the entries of
-     both sides, and for an entry on both, the invocations of both,
-     oldest first. There is one conflict for each record the two runs
-     share;
-   - add again: fetch, add the run to the records as they now stand, and
-     push. The producer did the same the first time, so it takes no rule
-     of its own and no person;
-   - a branch for each lab, merged by one job, which moves the same
-     conflicts to that job.
-2. A table of tools beside the naming rule. A record is named for the
+1. A table of tools beside the naming rule. A record is named for the
    tool "as the tool names itself", and for some commands that takes a
    reading. `make W=1e init/main.o` reports the compiler's warnings and is
    filed as `clang/init/main.o.json`. A second producer can as well file
@@ -61,7 +53,7 @@ the version (`format/CHANGES.md`).
    | `scripts/checkpatch.pl --git RANGE` | `checkpatch.pl.json`          |
 
    A tool the table lacks gets its line before a producer files it.
-3. The `.config` of an entry made before a build's last run. A build
+2. The `.config` of an entry made before a build's last run. A build
    holds one `config` file, the `.config` of its latest run. A profile's
    fragments can change under one name, so a later run of the same commit
    and build can be configured differently: its entries carry the new

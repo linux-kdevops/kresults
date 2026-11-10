@@ -75,10 +75,10 @@ sparse, built two ways:
 ```
 
 A producer adds a run to the entry it equals, or adds an entry, and
-writes the file whole. An entry of a series is set against the entry
-of its base that has the same tools, command and environment, so a
-series is compared only with a base that ran what it ran. A reader
-says when their `.config` differs.
+writes the file whole. One whose push is refused fetches, adds its runs
+to the records as they now stand, and pushes again. An entry of a series
+is set against the entry of its base with the same tools, command and
+environment. A reader says when their `.config` differs.
 
 ## Tools
 
