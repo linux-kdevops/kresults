@@ -148,8 +148,11 @@ the command that runs next.
   failing. A comparison counts it neither introduced nor fixed.
 
 `exit` is the command's exit status, and a test's is 1 when it failed,
-else 0. A run stopped on purpose, as when its producer cancels it, leaves
-nothing.
+else 0. A `pass` has an exit status of 0. A `fail` may have one too, for
+a tool that exits 0 whatever it finds, where the producer reads the
+verdict from what the tool printed. A `skip` always has its reason as
+`output`. A run stopped on purpose, as when its producer cancels it,
+leaves nothing.
 
 ## Output
 
@@ -234,21 +237,19 @@ linux/                                   the project
   `/` would be two directories, and its series is not recorded.
 - A build is its configuration, kbuild's `ARCH` and the compiler, each
   a directory. The compiler is `clang` when `LLVM` is set and not empty,
-  else `gcc`. The configuration is the make target that wrote the
-  `.config`, such as `tinyconfig`, or the profiles of fragments merged
-  into it, one directory each, sorted by name so that a set of profiles
-  has one path: `block-layer/nvm-express-driver/`. The order is that of
-  the names' code points, as `LC_ALL=C sort` gives it, the same on every
-  host. A profile is named after the
-  `MAINTAINERS` entry whose code it configures: the entry's title in
-  lower case, each run of other characters a hyphen, `block-layer` for
-  BLOCK LAYER. A profile for no entry's code is named for what it
-  configures, `fstests` for the guest fstests runs in. The configuration
-  ends at the first directory named for an `ARCH` with one named for a
-  compiler below it, so no profile takes either name, nor a tool's. A
-  record under a build names it again in `subject.build`. The path is how
-  a record is found, and the field lets one be read, and reported on, away
-  from its directory.
+  else `gcc`. The `ARCH` is the one the run set, or with none the one
+  kbuild took for the host, which the `.config` names in its first
+  lines: `x86` on an x86_64 host. The configuration is the make target
+  that wrote the `.config`, such as `tinyconfig`, or the profiles of
+  fragments merged into it, one directory each, in the order of
+  `LC_ALL=C sort`: `block-layer/nvm-express-driver/`. A profile is named
+  after the `MAINTAINERS` entry whose code it configures: the entry's
+  title in lower case, each run of other characters a hyphen,
+  `block-layer` for BLOCK LAYER. A profile for no entry's code is named
+  for what it configures, `fstests` for the guest fstests runs in. The
+  configuration ends at the first directory named for an `ARCH` with one
+  named for a compiler below it, so no profile takes either name, nor a
+  tool's. A record under a build names it again in `subject.build`.
 - A record lies under the build its command ran in, and each of its
   entries has that build's `config`. A record of a tool that reads no
   build lies directly under the commit, and its entries have none:
@@ -258,16 +259,15 @@ linux/                                   the project
   - a make target under `make/`, `make/htmldocs/filesystems.json` for
     `make SPHINXDIRS=filesystems htmldocs`, and `make/all.json` for
     make with no target, whose default goal is `all`;
-  - a checker that make runs on an object, with `C=2`, `W=` or
-    `CLIPPY=1`, or that a launcher in the tree runs, by the checker's
-    name, since the target there is the object:
+  - a checker that make runs on an object, with `C=2` or `W=`, or that
+    a launcher in the tree runs, by the checker's name, since the target
+    there is the object:
     `sparse/init/main.o.json`, `clang/init/main.o.json` under `W=1e`,
     `clang-tidy/init/main.o.json` from `run-clang-tools.py`;
   - a program or a script run directly by its own name:
     `checkpatch.pl.json`, `kernel-doc/init/main.c.json`; a program run
     with a subcommand by the program, then the subcommand,
-    `b4/shazam.json`; a git command by the name of its manual page,
-    `git-am.json`;
+    `b4/shazam.json`;
   - a test suite by its name, then the section that ran the test:
     `fstests/xfs_bs4k_ss512/generic/001.json`.
 
@@ -279,8 +279,12 @@ linux/                                   the project
 ## Known commands
 
 The rules above name a record and place it, and for some commands they
-take a reading. Each command a producer runs is listed here, and a command
-the list lacks gets its line before a producer files its record.
+take a reading. [commands.json](commands.json) lists each command a
+producer runs, with the name of its record and whether the record lies
+under a build, the commit or a series. In a record's name, `*` stands for
+one name, or part of one, and `**` for a path. `validate` refuses a record
+the list lacks, so a command gets its line there before a producer files
+its record.
 
 A command lies under a build when it reads the `.config` or what the
 build made, and under the commit when it reads neither. kbuild's
@@ -288,45 +292,11 @@ build made, and under the commit when it reads neither. kbuild's
 `checkstack` is one of them and still lies under a build, since it reads
 `vmlinux`.
 
-Under a build:
-
-| Command                                 | Record                      |
-| --------------------------------------- | --------------------------- |
-| `make TARGET`, to configure             | `make/TARGET.json`          |
-| `scripts/kconfig/merge_config.sh`       | `merge_config.sh.json`      |
-| `make`                                  | `make/all.json`             |
-| `make dir-pkg`                          | `make/dir-pkg.json`         |
-| `make checkstack`                       | `make/checkstack.json`      |
-| `make rusttest`                         | `make/rusttest.json`        |
-| `make W=1e OBJ`                         | `clang/OBJ.json`, or `gcc/` |
-| `make C=2 OBJ`                          | `sparse/OBJ.json`           |
-| `make C=2 CHECK=smatch OBJ`             | `smatch/OBJ.json`           |
-| `make C=2 CHECK=scripts/coccicheck OBJ` | `coccicheck/OBJ.json`       |
-| `clang-tidy FILE`                       | `clang-tidy/OBJ.json`       |
-| `check -s SECTION TEST`                 | `fstests/SECTION/TEST.json` |
-
-Under the commit:
-
-| Command                             | Record                       |
-| ----------------------------------- | ---------------------------- |
-| `scripts/checkpatch.pl --git RANGE` | `checkpatch.pl.json`         |
-| `scripts/get_maintainer.pl PATCH`   | `get_maintainer.pl.json`     |
-| `scripts/kernel-doc FILE`           | `kernel-doc/FILE.json`       |
-| `scripts/checkincludes.pl FILE`     | `checkincludes.pl/FILE.json` |
-| `make SPHINXDIRS=DIR htmldocs`      | `make/htmldocs/DIR.json`     |
-| `make rustfmtcheck`                 | `make/rustfmtcheck.json`     |
-
-Under a series:
-
-| Command     | Record           |
-| ----------- | ---------------- |
-| `b4 mbox`   | `b4/mbox.json`   |
-| `b4 shazam` | `b4/shazam.json` |
-
 ## A commit and its series
 
-Each commit holds `series.json`, which says how the commit came and
-what its records are set against:
+Each commit that has a record holds `series.json`, which says how the
+commit came and what its records are set against. A commit that came from
+no message has one as well, with an empty `message_id`:
 
 - `commit`: the commit, whole;
 - `message_id`: the series it was applied from, whose records lie under

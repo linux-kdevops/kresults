@@ -22,6 +22,7 @@ type Json = dict[str, Any]
 type Files = dict[str, Json | str]
 
 TIP = "0123456789ab" + 28 * "c"
+OTHER = "fedcba987654" + 28 * "d"
 BASE = 40 * "b"
 COMMIT = "linux/v1.2-3-g0123456789ab"
 SERIES = f"{COMMIT}/series.json"
@@ -32,6 +33,7 @@ HTMLDOCS = f"{COMMIT}/make/htmldocs/filesystems.json"
 KERNEL_DOC = f"{COMMIT}/kernel-doc/init/main.c.json"
 TINY = "tinyconfig/x86_64/clang"
 OBJECTS = f"{COMMIT}/{TINY}/objects.json"
+MAKE = f"{COMMIT}/{TINY}/make/all.json"
 SPARSE = f"{COMMIT}/{TINY}/sparse/init/main.o.json"
 PROFILES = "block-layer/nvm-express-driver/x86_64/gcc"
 NESTED = f"{COMMIT}/{PROFILES}/make/all.json"
@@ -45,6 +47,8 @@ OTHER_CONFIG = "sha256:" + 64 * "2"
 CLANG = {"ARCH": "x86_64", "LLVM": "1"}
 GCC = {"ARCH": "x86_64"}
 SAME_RUN = [(SPARSE, "entry 2 is the run of entry 1; add to its invocations")]
+UNKNOWN = "is of no known command; add its line to commands.json"
+OTHER_BUILD = "entry 1 sets an ARCH or LLVM its build does not name"
 
 
 def invocation() -> Json:
@@ -147,7 +151,7 @@ def good() -> Files:
         ),
         f"{COMMIT}/{TINY}/config": "CONFIG_EXAMPLE=y\n",
         OBJECTS: {"schema": 1, "commit": TIP, "build": build(TINY), **objects},
-        f"{COMMIT}/{TINY}/make/all.json": built(TINY, *make),
+        MAKE: built(TINY, *make),
         SPARSE: built(TINY, sparse, file="init/main.o"),
         NESTED: built(PROFILES, entry("make -s", GCC, config=CONFIG)),
         TEST: built(GUEST, check, test="generic/001"),
@@ -186,6 +190,24 @@ def moved(path: str, to: str) -> Files:
     files = good()
     files[to] = files.pop(path)
     return files
+
+
+def copied(path: str, to: str) -> Files:
+    """Return the good tree with the file at path at another as well."""
+    files = good()
+    files[to] = files[path]
+    return files
+
+
+def refiled(directory: str, commit: str) -> tuple[Files, str]:
+    """Return the good tree with a record moved to a directory, and its path.
+
+    The directory holds the series.json of a commit that came from no message.
+    """
+    path = f"{directory}/checkpatch.pl.json"
+    files = moved(CHECKPATCH, path)
+    files[f"{directory}/series.json"] = series(commit, "", commit)
+    return files, path
 
 
 def outputs(first: str, second: str) -> list[tuple[str, str]]:
@@ -261,7 +283,9 @@ class Validate(unittest.TestCase):
         path = NESTED.replace("x86_64", "riscv64")
         del files[NESTED]
         files[path] = built(PROFILES.replace("x86_64", "riscv64"), entry("make -s"))
-        self.assert_problem(files, path, "names riscv64, which is no ARCH of kbuild's")
+        # A directory of no ARCH is no build, so the record lies under the commit.
+        named = "names riscv64, which is no ARCH of kbuild's"
+        self.assertEqual(problems(files), [(path, UNKNOWN), (path, named)])
 
     def test_arch_alias(self) -> None:
         files = good()
@@ -277,11 +301,26 @@ class Validate(unittest.TestCase):
         self.assert_problem(files, SPARSE, "entry 1 sets an ARCH or LLVM")
 
     def test_env_llvm(self) -> None:
-        for path, env in ((SPARSE, GCC), (NESTED, CLANG), (NESTED, {"LLVM": "1"})):
+        for path, env in ((SPARSE, GCC), (NESTED, CLANG)):
             with self.subTest(path=path, env=env):
                 files = good()
                 first_entry(files, path)["env"] = env
-                self.assert_problem(files, path, "entry 1 sets an ARCH or LLVM")
+                self.assert_problem(files, path, OTHER_BUILD)
+
+    def test_env_without_arch(self) -> None:
+        # kbuild takes the host's ARCH for a run that sets none: x86 on x86_64.
+        native = "tinyconfig/x86/gcc"
+        path = f"{COMMIT}/{native}/make/all.json"
+        for env in ({}, {"ARCH": ""}, {"LLVM": "1"}):
+            with self.subTest(env=env):
+                files = good()
+                files[path] = built(native, entry("make -s", env, config=CONFIG))
+                self.assertEqual(problems(files), [])
+
+    def test_env_arch_of_a_tool_that_is_not_make(self) -> None:
+        files = good()
+        first_entry(files, TEST)["env"] = {"ARCH": "arm64", "FSTYP": "xfs"}
+        self.assert_problem(files, TEST, OTHER_BUILD)
 
     def test_env_llvm_suffix(self) -> None:
         files = good()
@@ -362,13 +401,15 @@ class Validate(unittest.TestCase):
             "command": "make -s C=2 CF=-Wsparse-error init/main.o",
             "env": {**CLANG, "KCFLAGS": "-O3"},
             "config": OTHER_CONFIG,
-            "status": "fail",
+            "status": "error",
             "exit": 2,
         }
         for field, value in changes.items():
             with self.subTest(field=field):
                 files = good()
                 entries = at(files, SPARSE)["entries"]
+                # A pass has one exit status, so the run is of sparse failing.
+                entries[0]["status"] = "fail"
                 entries.append({**entries[0], field: value})
                 self.assertEqual(problems(files), [])
 
@@ -380,12 +421,12 @@ class Validate(unittest.TestCase):
         self.assert_problem(files, CHECKPATCH, "lies under linux/, not other/")
 
     def test_series_under_commit(self) -> None:
-        path = f"{COMMIT}/b4/shazam.json"
-        self.assert_problem(moved(SHAZAM, path), path, "its subject is a series")
+        files = moved(SHAZAM, CHECKPATCH)
+        self.assert_problem(files, CHECKPATCH, "its subject is a series")
 
     def test_commit_under_series(self) -> None:
-        path = f"linux/{APPLIED}/checkpatch.pl.json"
-        self.assert_problem(moved(CHECKPATCH, path), path, "its subject is a commit")
+        files = moved(CHECKPATCH, SHAZAM)
+        self.assert_problem(files, SHAZAM, "its subject is a commit")
 
     def test_other_message_id(self) -> None:
         files = good()
@@ -393,18 +434,18 @@ class Validate(unittest.TestCase):
         self.assert_problem(files, SHAZAM, f"lies under {UNAPPLIED}/, not {APPLIED}/")
 
     def test_described_directory(self) -> None:
-        path = CHECKPATCH.replace("g0123456789ab", "gfedcba987654")
-        self.assert_problem(moved(CHECKPATCH, path), path, f"does not name {TIP}")
+        files, path = refiled("linux/v1.2-3-gfedcba987654", OTHER)
+        self.assert_problem(files, path, f"does not name {TIP}")
 
     def test_abbreviated_directory(self) -> None:
-        path = "linux/0123456789ab/checkpatch.pl.json"
-        self.assertEqual(problems(moved(CHECKPATCH, path)), [])
-        path = "linux/fedcba987654/checkpatch.pl.json"
-        self.assert_problem(moved(CHECKPATCH, path), path, f"does not name {TIP}")
+        files, _ = refiled("linux/0123456789ab", TIP)
+        self.assertEqual(problems(files), [])
+        files, path = refiled("linux/fedcba987654", OTHER)
+        self.assert_problem(files, path, f"does not name {TIP}")
 
     def test_tag_directory(self) -> None:
-        path = "linux/v1.3/checkpatch.pl.json"
-        self.assertEqual(problems(moved(CHECKPATCH, path)), [])
+        files, _ = refiled("linux/v1.3", TIP)
+        self.assertEqual(problems(files), [])
 
     def test_file_above_a_commit(self) -> None:
         for path in ("README", "linux/README", "linux/series.json"):
@@ -421,14 +462,34 @@ class Validate(unittest.TestCase):
             (OBJECTS, f"linux/{APPLIED}/{TINY}/objects.json"),
         ):
             with self.subTest(path=path):
-                found = problems(moved(file, path))
+                found = problems(copied(file, path))
                 self.assertEqual({where for where, _ in found}, {path})
 
     # A commit's series.json.
 
     def test_series_directory(self) -> None:
         path = SERIES.replace("g0123456789ab", "gfedcba987654")
-        self.assert_problem(moved(SERIES, path), path, f"does not name {TIP}")
+        self.assert_problem(copied(SERIES, path), path, f"does not name {TIP}")
+
+    def test_commit_without_series(self) -> None:
+        files = good()
+        del files[SERIES]
+        self.assert_problem(files, SERIES, "is missing; each commit that has a record")
+
+    def test_build_without_series(self) -> None:
+        files: Files = {MAKE: good()[MAKE]}
+        self.assert_problem(files, SERIES, "is missing; each commit that has a record")
+
+    def test_commit_without_records(self) -> None:
+        tiny = f"{COMMIT}/{TINY}/"
+        files = {path: data for path, data in good().items() if path.startswith(tiny)}
+        del files[MAKE], files[SPARSE]
+        self.assertEqual(problems(files), [])
+
+    def test_commit_from_no_message(self) -> None:
+        files = good()
+        files[SERIES] = series(TIP, "", TIP)
+        self.assertEqual(problems(files), [])
 
     def test_series_last_commit(self) -> None:
         files = good()
@@ -440,6 +501,78 @@ class Validate(unittest.TestCase):
         files = good()
         at(files, BASE_SERIES)["commit"] = TIP
         self.assert_problem(files, BASE_SERIES, "neither its last one nor")
+
+    # A record's command (commands.json).
+
+    def test_commands(self) -> None:
+        listed: Json = json.loads((validate.HERE / "commands.json").read_text("utf-8"))
+        self.assertTrue(listed["commands"])
+        for command in listed["commands"]:
+            with self.subTest(command=command):
+                self.assertEqual(set(command), {"command", "record", "under"})
+                self.assertIsInstance(command["command"], str)
+                self.assertIn(command["under"], ("build", "commit", "series"))
+                self.assertIsInstance(command["record"], str)
+                self.assertRegex(command["record"], r"\A[^/]+(/[^/]+)*\.json\Z")
+
+    def test_unknown_command(self) -> None:
+        for path, to in (
+            (CHECKPATCH, f"{COMMIT}/checkpatch.json"),
+            (HTMLDOCS, f"{COMMIT}/make/htmldocs/filesystems/xfs.json"),
+            (MAKE, f"{COMMIT}/{TINY}/make/modules.json"),
+            (SPARSE, f"{COMMIT}/{TINY}/lint/init/main.o.json"),
+            (SHAZAM, f"linux/{UNAPPLIED}/b4/am.json"),
+        ):
+            with self.subTest(to=to):
+                self.assertEqual(problems(moved(path, to)), [(to, UNKNOWN)])
+
+    def test_command_named_in_part(self) -> None:
+        path = f"{COMMIT}/{TINY}/make/tinyconfig.json"
+        files = good()
+        files[path] = built(TINY, entry("make -s tinyconfig", CLANG, config=CONFIG))
+        self.assertEqual(problems(files), [])
+
+    def test_command_of_another_level(self) -> None:
+        checkpatch = f"scripts/checkpatch.pl --git {BASE}..{TIP}"
+        patch = built(TINY, entry(checkpatch, config=CONFIG))
+        sent = record({"message_id": APPLIED}, entry(checkpatch))
+        make = record({"commit": TIP}, entry("make -s", GCC))
+        shazam = record({"commit": TIP}, entry(f"b4 shazam {APPLIED}"))
+        cases: tuple[tuple[str, Json, str, str], ...] = (
+            (f"{COMMIT}/{TINY}/checkpatch.pl.json", patch, "a build", "the commit"),
+            (f"linux/{APPLIED}/checkpatch.pl.json", sent, "a series", "the commit"),
+            (f"{COMMIT}/make/all.json", make, "the commit", "a build"),
+            (f"{COMMIT}/b4/shazam.json", shazam, "the commit", "a series"),
+        )
+        for path, data, here, there in cases:
+            with self.subTest(path=path):
+                files = good()
+                files[path] = data
+                problem = f"lies under {here}, and commands.json has it under {there}"
+                self.assert_problem(files, path, problem)
+
+    # An entry's verdict.
+
+    def test_pass_with_exit(self) -> None:
+        files = good()
+        first_entry(files, CHECKPATCH)["exit"] = 2
+        problem = "entry 1 is a pass, and its exit status is 2"
+        self.assert_problem(files, CHECKPATCH, problem)
+
+    def test_fail_with_exit_0(self) -> None:
+        files = good()
+        first_entry(files, CHECKPATCH).update(status="fail", output="WARNING: x\n")
+        self.assertEqual(problems(files), [])
+
+    def test_skip_without_output(self) -> None:
+        files = good()
+        first_entry(files, TEST)["status"] = "skip"
+        self.assert_problem(files, TEST, "entry 1 is a skip, and has no output")
+
+    def test_skip_with_its_reason(self) -> None:
+        files = good()
+        first_entry(files, TEST).update(status="skip", output="no scratch device\n")
+        self.assertEqual(problems(files), [])
 
     # What a record may hold.
 

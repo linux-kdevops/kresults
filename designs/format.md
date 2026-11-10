@@ -48,16 +48,17 @@ the version (`format/CHANGES.md`).
 - A series whose Message-ID holds a `/` is not recorded. No tool that
   sends patches makes one, and an escape would be a rule to write and to
   check for a case not yet met.
-
-## Open
-
-1. Whether `validate` holds a record to the known commands. It checks
-   neither a record's name nor its level against the list, so
-   `checkpatch.pl.json` under a build passes.
-2. The directory of a native build. With no `ARCH` set, kbuild takes `x86`
-   on an x86_64 host. The format does not say which name files that build.
-3. What must be there. Nothing requires a commit's `series.json`, a
-   build's `config` or the `objects.json` of a series' build, and the hash
-   of `config` is compared with no entry.
-4. A verdict against its exit status. `pass` with an exit status of 2
-   passes, and so does `skip` with no output.
+- `validate` holds every record to `commands.json`, and refuses one the
+  list lacks. A table in the text alone was advice: `checkpatch.pl.json`
+  under a build still passed.
+- A build made with no `ARCH` set is filed under the one kbuild took for
+  the host, which its `.config` names. The kernel picks its architecture
+  by itself, and a format that asked a developer to set it would refuse
+  the plainest build there is.
+- A commit that has a record holds `series.json`, which says how the
+  commit came, with or without a message. A build's `config` and
+  `objects.json` are not required, so a tree stays valid while a run is
+  still writing it.
+- A `pass` has an exit status of 0 and a `skip` gives its reason. A `fail`
+  may exit 0, since some tools exit 0 whatever they find and the producer
+  reads the verdict from what they printed.

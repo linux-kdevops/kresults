@@ -50,6 +50,8 @@ class Entry(TypedDict):
     command: str
     env: dict[str, str]
     config: NotRequired[str]
+    status: str
+    exit: int
     output: NotRequired[str]
 
 
@@ -147,6 +149,24 @@ SCHEMAS: dict[str, Validator] = {
 }
 
 
+# The fields the checks read of a line of commands.json.
+class Command(TypedDict):
+    record: str
+    under: str
+
+
+def names_of(record: str) -> re.Pattern[str]:
+    """Return what matches a record's name: * is a name or part of one, ** a path."""
+    path = re.escape(record).replace(r"\*\*", "[^/]+(?:/[^/]+)*")
+    return re.compile(path.replace(r"\*", "[^/]+"))
+
+
+COMMANDS: list[Command] = json.loads((HERE / "commands.json").read_bytes())["commands"]
+RECORDS = [(names_of(command["record"]), command) for command in COMMANDS]
+# What a record lies under, by the name commands.json gives it in "under".
+UNDER = {"build": "a build", "commit": "the commit", "series": "a series"}
+
+
 def closest(error: ValidationError) -> Iterator[ValidationError]:
     """Yield the errors of the alternative of a oneOf that a value is closest to.
 
@@ -180,6 +200,10 @@ class Place:
     def series(self) -> bool:
         return "@" in self.name
 
+    @property
+    def level(self) -> str:
+        return "series" if self.series else "build" if self.build else "commit"
+
 
 def locate(parts: tuple[str, ...]) -> Place | None:
     """Return where a file lies, or None for one under no commit or series."""
@@ -212,6 +236,18 @@ def is_named(place: Place) -> bool:
     return bool(place.build) and place.below == ("config",)
 
 
+def is_record(file: Path, place: Place) -> bool:
+    named = file.name.endswith(".json") and kind_of(place) == "record"
+    return named and not file.is_symlink()
+
+
+def command_of(place: Place, level: str) -> Command | None:
+    """Return the command whose record, under a level, has the name of a file."""
+    path = "/".join(place.below)
+    found = (c for names, c in RECORDS if c["under"] == level and names.fullmatch(path))
+    return next(found, None)
+
+
 def lines(output: str) -> list[str]:
     """Return an output's lines in a fixed order, less what moves between runs."""
     return sorted(
@@ -229,15 +265,12 @@ def run_of(entry: Entry) -> str:
 def ran_in(env: dict[str, str], arch: str, compiler: str) -> bool:
     """Return whether an entry's ARCH and LLVM name the build it lies under.
 
-    An entry that sets ARCH is of make, which compiles with clang under any
-    LLVM that is not empty, and with gcc under none. An entry that sets
-    neither, as one of fstests, names no build.
+    make compiles with clang under any LLVM that is not empty, and with gcc
+    under none. An entry that sets no ARCH names no build: kbuild took the
+    host's, or the tool is not make.
     """
-    if env.get("ARCH", arch) != arch:
-        return False
-    if env.get("LLVM"):
-        return compiler == "clang"
-    return "ARCH" not in env or compiler == "gcc"
+    named = "clang" if env.get("LLVM") else "gcc"
+    return not env.get("ARCH") or (env["ARCH"], named) == (arch, compiler)
 
 
 def check_commit(place: Place, sha: str) -> Iterator[str]:
@@ -276,20 +309,40 @@ def check_tree(place: Place, subject: TreeSubject) -> Iterator[str]:
             yield f"is not named for {target}"
 
 
+def check_name(place: Place) -> Iterator[str]:
+    """Yield the problem of a record that commands.json lists elsewhere or nowhere."""
+    levels = [level for level in UNDER if command_of(place, level)]
+    if not levels:
+        yield "is of no known command; add its line to commands.json"
+    elif place.level not in levels:
+        here, there = UNDER[place.level], UNDER[levels[0]]
+        yield f"lies under {here}, and commands.json has it under {there}"
+
+
+def check_entry(place: Place, entry: Entry) -> Iterator[str]:
+    """Yield what an entry breaks, to be told after its number."""
+    if place.build and "config" not in entry:
+        yield "has no config, and lies under a build"
+    if not place.build and "config" in entry:
+        yield "has a config, and lies under no build"
+    if place.build and not ran_in(entry["env"], *place.build[-2:]):
+        yield "sets an ARCH or LLVM its build does not name"
+    texts = (entry["command"], entry.get("output", ""), *entry["env"].values())
+    if any(HOME.search(text) for text in texts):
+        yield "names a home directory; write it as ~"
+    if entry["status"] == "pass" and entry["exit"]:
+        yield f"is a pass, and its exit status is {entry['exit']}"
+    if entry["status"] == "skip" and not entry.get("output"):
+        yield "is a skip, and has no output to give its reason"
+
+
 def check_entries(place: Place, entries: list[Entry]) -> Iterator[str]:
     runs: dict[str, int] = {}
     for number, entry in enumerate(entries, 1):
         if (first := runs.setdefault(run_of(entry), number)) != number:
             yield f"entry {number} is the run of entry {first}; add to its invocations"
-        if place.build and "config" not in entry:
-            yield f"entry {number} has no config, and lies under a build"
-        if not place.build and "config" in entry:
-            yield f"entry {number} has a config, and lies under no build"
-        if place.build and not ran_in(entry["env"], *place.build[-2:]):
-            yield f"entry {number} sets an ARCH or LLVM its build does not name"
-        texts = (entry["command"], entry.get("output", ""), *entry["env"].values())
-        if any(HOME.search(text) for text in texts):
-            yield f"entry {number} names a home directory; write it as ~"
+        for problem in check_entry(place, entry):
+            yield f"entry {number} {problem}"
 
 
 def check_record(place: Place, record: Record) -> Iterator[str]:
@@ -355,13 +408,14 @@ def check_json(file: Path, place: Place) -> Iterator[str]:
         yield from CHECKS[kind](place, fields)
 
 
-def check_file(file: Path, parts: tuple[str, ...]) -> Iterator[str]:
-    place = locate(parts)
+def check_file(file: Path, place: Place | None) -> Iterator[str]:
     if file.is_symlink():
         yield "is a symbolic link"
     elif place is None:
         yield "lies under no commit or series"
     elif file.name.endswith(".json"):
+        if is_record(file, place):
+            yield from check_name(place)
         yield from check_json(file, place)
     elif not is_named(place):
         yield "is not a file the format names"
@@ -378,12 +432,20 @@ def files(directory: Path) -> Iterator[Path]:
 
 def check(records: Path) -> Iterator[tuple[str, str]]:
     """Yield each file under records that breaks the format, and why."""
+    commits: set[str] = set()
     for file in files(records):
         relative = file.relative_to(records)
         # A linked worktree keeps .git as a file.
         if relative.parts == (".git",):
             continue
-        for problem in check_file(file, relative.parts):
+        place = locate(relative.parts)
+        # A commit is told of its missing series.json once, at its first record.
+        if place and not place.series and is_record(file, place):
+            series = f"{place.project}/{place.name}/series.json"
+            if series not in commits and not (records / series).is_file():
+                yield series, "is missing; each commit that has a record holds one"
+            commits.add(series)
+        for problem in check_file(file, place):
             yield relative.as_posix(), problem
 
 
