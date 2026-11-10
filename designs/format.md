@@ -21,27 +21,15 @@ the version (`format/CHANGES.md`).
   reported on, away from its directory.
 - What writes records is a producer, the schema's word. kdevops-ng, one
   of them, calls what runs its workflows an engine.
+- Two outputs are compared as counted lines, in any order, without what
+  moves between two runs: a kernel log's time stamp, a code address, the
+  time `diff` prints. `make --jobs` prints two errors in either order, and
+  the raw text would file one failing build once for each. A reader that
+  sets a series against its base uses the same rule.
 
 ## Open
 
-1. How two outputs are compared. What a run reported is part of an
-   entry's identity, and the order of its lines must not be: `make --jobs`
-   prints two errors in either order, and one failing build would leave an
-   entry for each. The options:
-   - compare two outputs as counted lines, in any order, after dropping
-     from each line what moves between two runs: a kernel log's time
-     stamp, a code address, the time `diff` prints after a file's name.
-     The output is kept as the first run printed it, and a real difference
-     in what was reported still makes a new entry. A reader that sets a
-     series against its base can match lines by the same key, with a
-     file's line and column dropped as well, since a series moves code;
-   - take the output out of the identity, and give each invocation its
-     own verdict and output. A flaky test is then one entry whose
-     invocations disagree;
-   - have the producer print in a fixed order. `make --output-sync` keeps
-     each target's lines together but not the targets in order, so only
-     `--jobs=1` gives one.
-2. What a producer does when its push is refused. A run writes whole each
+1. What a producer does when its push is refused. A run writes whole each
    record it adds to, so two producers that push at once have changed the
    same files, and a merge conflicts in each. The options:
    - merge by hand. Each conflict resolves the same way: the entries of
@@ -53,7 +41,7 @@ the version (`format/CHANGES.md`).
      of its own and no person;
    - a branch for each lab, merged by one job, which moves the same
      conflicts to that job.
-3. A table of tools beside the naming rule. A record is named for the
+2. A table of tools beside the naming rule. A record is named for the
    tool "as the tool names itself", and for some commands that takes a
    reading. `make W=1e init/main.o` reports the compiler's warnings and is
    filed as `clang/init/main.o.json`. A second producer can as well file
@@ -73,7 +61,7 @@ the version (`format/CHANGES.md`).
    | `scripts/checkpatch.pl --git RANGE` | `checkpatch.pl.json`          |
 
    A tool the table lacks gets its line before a producer files it.
-4. The `.config` of an entry made before a build's last run. A build
+3. The `.config` of an entry made before a build's last run. A build
    holds one `config` file, the `.config` of its latest run. A profile's
    fragments can change under one name, so a later run of the same commit
    and build can be configured differently: its entries carry the new

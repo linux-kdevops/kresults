@@ -149,6 +149,15 @@ skipped. Nothing parses it, so a run keeps progress out with the tool's
 own options, as `make -s` does. `output` is absent when the tool printed
 nothing.
 
+Two outputs are the same when they hold the same lines, each as many
+times, in any order, once every line has lost what moves from one run to
+the next: a kernel log's time stamp, `[ 6405.509403]`, a code address,
+`0x` and six or more hexadecimal digits, and the time `diff` prints after
+a file's name. `make --jobs` prints two errors in either order, and they
+are one output. `output` keeps what the first run printed. A reader that
+sets a series against its base matches lines the same way, and drops a
+file's line and column as well, since a series moves code.
+
 The records may be public. `output`, `command` and `env`:
 
 - give paths in the tree relative to it, and leave out the absolute
