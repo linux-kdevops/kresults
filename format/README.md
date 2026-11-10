@@ -30,6 +30,8 @@ sparse, built two ways:
 {
   "schema": 1,
   "subject": {"project": "linux", "commit": "1da4e6e1d71d…",
+              "build": {"configuration": ["tinyconfig"],
+                        "arch": "x86_64", "compiler": "clang"},
               "file": "init/main.o"},
   "entries": [
     {
@@ -218,7 +220,10 @@ linux/                                   the project
   BLOCK LAYER. A profile for no entry's code is named for what it
   configures, `fstests` for the guest fstests runs in. The configuration
   ends at the first directory named for an `ARCH` with one named for a
-  compiler below it, so no profile takes either name.
+  compiler below it, so no profile takes either name. A record under a
+  build names it again in `subject.build`. The path is how a record is
+  found, and the field lets one be read, and reported on, away from its
+  directory.
 - A record lies under the build its command ran in, and each of its
   entries has that build's `config`. A record of a tool that reads no
   build lies directly under the commit, and its entries have none:
@@ -270,9 +275,9 @@ what its records are set against:
 
 Each build of a series holds `objects.json`: the objects it compiles
 from the series' C files, and the C files outside `tools/`, `scripts/`
-and `Documentation/` it does not compile. No tool prints these lists:
-the producer reads them from the `.cmd` file kbuild writes for each
-object, as `config` is the `.config` the build's last record ran under.
+and `Documentation/` it does not compile. It names its commit and its
+build, as a record does. No tool prints these lists: the producer reads
+them from the `.cmd` file kbuild writes for each object.
 
 A series' own records lie under its Message-ID: `b4/mbox.json` for
 fetching the message posted, `b4/mbox.mbx` for the message saved, and

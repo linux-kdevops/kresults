@@ -6,6 +6,8 @@
   "additionalProperties": false,
   "required": [
     "schema",
+    "commit",
+    "build",
     "objects",
     "unbuilt"
   ],
@@ -13,6 +15,14 @@
     "schema": {
       "description": "The format version the file follows (format/CHANGES.md)",
       "const": 1
+    },
+    "commit": {
+      "description": "The commit that was built, whole",
+      "$ref": "#/definitions/sha"
+    },
+    "build": {
+      "description": "The build, as the file's path names it",
+      "$ref": "#/definitions/build"
     },
     "objects": {
       "description": "The objects the build compiles from the series' C files",
@@ -24,6 +34,45 @@
     }
   },
   "definitions": {
+    "sha": {
+      "type": "string",
+      "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "build": {
+      "description": "The build a command ran in, as the path names it: CONFIGURATION/ARCH/COMPILER",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "configuration",
+        "arch",
+        "compiler"
+      ],
+      "properties": {
+        "configuration": {
+          "description": "The make target that wrote the .config, or the profiles merged into it, sorted by name; one directory each",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+            "maxLength": 255
+          }
+        },
+        "arch": {
+          "description": "kbuild's ARCH",
+          "type": "string",
+          "minLength": 1
+        },
+        "compiler": {
+          "description": "clang under LLVM=1, else gcc",
+          "enum": [
+            "clang",
+            "gcc"
+          ]
+        }
+      }
+    },
     "paths": {
       "type": "array",
       "items": {

@@ -49,6 +49,10 @@
           "description": "The commit the tool ran on, whole",
           "$ref": "#/definitions/sha"
         },
+        "build": {
+          "description": "The build the command ran in; absent for a tool that reads none, whose record lies under the commit",
+          "$ref": "#/definitions/build"
+        },
         "file": {
           "description": "The file or object the tool checked, from the top of the tree; absent for a check of the whole tree",
           "$ref": "#/definitions/relative"
@@ -61,6 +65,41 @@
           "description": "The commits the tool checked as patches, BASE..COMMIT, both whole; absent unless it checked them",
           "type": "string",
           "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})\\.\\.([0-9a-f]{40}|[0-9a-f]{64})$"
+        }
+      }
+    },
+    "build": {
+      "description": "The build a command ran in, as the path names it: CONFIGURATION/ARCH/COMPILER",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "configuration",
+        "arch",
+        "compiler"
+      ],
+      "properties": {
+        "configuration": {
+          "description": "The make target that wrote the .config, or the profiles merged into it, sorted by name; one directory each",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+            "maxLength": 255
+          }
+        },
+        "arch": {
+          "description": "kbuild's ARCH",
+          "type": "string",
+          "minLength": 1
+        },
+        "compiler": {
+          "description": "clang under LLVM=1, else gcc",
+          "enum": [
+            "clang",
+            "gcc"
+          ]
         }
       }
     },
