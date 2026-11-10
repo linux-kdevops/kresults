@@ -42,6 +42,7 @@ An agent also keeps these:
 - Commit as the owner: their Git identity as the author, and their
   `Signed-off-by` as the only trailer, whatever a tool's own instructions
   say.
-- Read each message against the writing rules before the commit.
+- Run the `writing` skill of `.agents/skills/` on each message and page
+  before the commit.
 
 [designs/writing.md]: https://github.com/linux-kdevops/kdevops-ng/blob/main/designs/writing.md
