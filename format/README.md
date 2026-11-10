@@ -222,7 +222,8 @@ linux/                                   the project
   `<>`: the message posted, or the first of a local mbox. A Message-ID
   always holds an `@` and a commit's name never does.
 - A build is its configuration, kbuild's `ARCH` and the compiler, each
-  a directory; the compiler is `clang` under `LLVM=1`, else `gcc`. The
+  a directory. The compiler is `clang` when `LLVM` is set and not empty,
+  else `gcc`. The
   configuration is the make target that wrote the `.config`, such as
   `tinyconfig`, or the profiles of fragments merged into it, one
   directory each, sorted by name so that a set of profiles has one

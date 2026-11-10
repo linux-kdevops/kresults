@@ -95,7 +95,7 @@
           "minLength": 1
         },
         "compiler": {
-          "description": "clang under LLVM=1, else gcc",
+          "description": "clang when LLVM is set and not empty, else gcc",
           "enum": [
             "clang",
             "gcc"
