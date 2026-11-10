@@ -39,3 +39,23 @@ the version (`format/CHANGES.md`).
   file one result twice. A command lies under a build when it reads the
   `.config` or what the build made: kbuild's `no-dot-config-targets` and
   each script's source say which.
+
+## Open
+
+1. Whether `validate` holds a record to the known commands. It checks
+   neither a record's name nor its level against the list, so
+   `checkpatch.pl.json` under a build passes.
+2. The directory of a native build. With no `ARCH` set, kbuild takes `x86`
+   on an x86_64 host. The format does not say which name files that build.
+3. The order of profiles. "Sorted by name" gives no collation. `validate`
+   compares code points, where `block-layer` comes before `blockdev`, and
+   a locale's order puts it after.
+4. What must be there. Nothing requires a commit's `series.json`, a
+   build's `config` or the `objects.json` of a series' build, and the hash
+   of `config` is compared with no entry.
+5. A verdict against its exit status. `pass` with an exit status of 2
+   passes, and so does `skip` with no output.
+6. What the text leaves to the schemas alone: `subject.test`,
+   `subject.range` and the `commit` of `series.json`.
+7. A Message-ID that holds a `/`. A mail may carry one, and the schema
+   refuses it, since it would be two directories.
