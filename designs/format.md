@@ -30,6 +30,9 @@ the version (`format/CHANGES.md`).
   pushes. A merge would conflict in every record two runs share, and each
   conflict resolves the same way, by keeping both sides. That is the write
   the producer already does, so it writes again and no person merges.
+- A build keeps only the `.config` of its latest run. An entry made under
+  an earlier one keeps its hash, which still tells that the two were
+  configured differently, and a comparison uses no more.
 
 ## Open
 
@@ -53,13 +56,3 @@ the version (`format/CHANGES.md`).
    | `scripts/checkpatch.pl --git RANGE` | `checkpatch.pl.json`          |
 
    A tool the table lacks gets its line before a producer files it.
-2. The `.config` of an entry made before a build's last run. A build
-   holds one `config` file, the `.config` of its latest run. A profile's
-   fragments can change under one name, so a later run of the same commit
-   and build can be configured differently: its entries carry the new
-   hash, and `config` becomes the new `.config`. The earlier run's entries
-   keep their hash, and the `.config` it names is gone. The options:
-   - leave it so. The hash still tells that two entries were configured
-     differently, which is all a comparison needs;
-   - keep each `.config` under its hash, as `config/<sha256>`, at the
-     price of a file of about 100 to 300 KiB for each change.

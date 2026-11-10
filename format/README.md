@@ -119,10 +119,12 @@ repeats the run.
 `config` is `sha256:` and the SHA-256 of the `.config` the command ran
 under, absent when it reads none. A profile's fragments can change
 under the same name, so two runs at the same path may differ in
-`config`, and then they are two entries. A command that only prepares
-the `.config`, such as copying a defconfig or editing it with
-`scripts/config`, prints nothing and leaves no record: the `.config`
-it made is the `config` of the command that runs next.
+`config`, and then they are two entries. A build keeps the `.config` of
+its latest run as its `config` file, so the `.config` of an earlier entry
+is known by its hash alone. A command that only prepares the `.config`,
+such as copying a defconfig or editing it with `scripts/config`, prints
+nothing and leaves no record: the `.config` it made is the `config` of
+the command that runs next.
 
 ## Verdicts
 
