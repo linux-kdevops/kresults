@@ -178,6 +178,7 @@ Under a project lie its commits and its series:
 linux/                                   the project
 ├── v7.3-2-g1da4e6e1d71d/                a commit
 │   ├── series.json                      how it came, and its base
+│   ├── checkpatch.pl.json               a tool that reads no build
 │   ├── tinyconfig/x86_64/clang/         a build: configuration, ARCH, compiler
 │   │   ├── config                       its .config
 │   │   ├── objects.json                 what it compiles of the series
@@ -187,7 +188,6 @@ linux/                                   the project
 │   │   │   ├── dir-pkg.json             make dir-pkg
 │   │   │   ├── checkstack.json
 │   │   │   └── htmldocs/filesystems.json
-│   │   ├── checkpatch.pl.json
 │   │   ├── clang-tidy/init/main.o.json
 │   │   └── sparse/init/main.o.json      make C=2 init/main.o
 │   ├── block-layer/nvm-express-driver/x86_64/clang/
@@ -219,8 +219,12 @@ linux/                                   the project
   configures, `fstests` for the guest fstests runs in. The configuration
   ends at the first directory named for an `ARCH` with one named for a
   compiler below it, so no profile takes either name.
-- Under a build or a series, a record is named for the tool that was
-  run, as the tool names itself, then for what it was run on:
+- A record lies under the build its command ran in, and each of its
+  entries has that build's `config`. A record of a tool that reads no
+  build lies directly under the commit, and its entries have none:
+  `checkpatch.pl` reads the commits alone, so one run serves every build.
+- Under a commit, a build or a series, a record is named for the tool
+  that was run, as the tool names itself, then for what it was run on:
   - a make target under `make/`, `make/htmldocs/filesystems.json` for
     `make SPHINXDIRS=filesystems htmldocs`, and `make/all.json` for
     make with no target, whose default goal is `all`;
