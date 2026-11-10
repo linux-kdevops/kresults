@@ -1,0 +1,402 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: copyleft-next-0.3.1
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["jsonschema"]
+# ///
+"""Check the records under --records against the format (README.md).
+
+Print each file that breaks it, with why, and exit 1 if any does.
+
+    validate.py --records ../records
+"""
+
+import argparse
+import json
+import re
+import sys
+from collections.abc import Callable, Iterator, Sequence
+from dataclasses import dataclass
+from itertools import groupby
+from pathlib import Path
+from typing import Any, NotRequired, TypedDict, cast
+
+from jsonschema import Draft7Validator, ValidationError, validators
+from jsonschema.protocols import Validator
+
+# The fields the checks read, which a file has once its schema passes it.
+
+
+class Build(TypedDict):
+    configuration: list[str]
+    arch: str
+    compiler: str
+
+
+class TreeSubject(TypedDict):
+    project: str
+    commit: str
+    build: NotRequired[Build]
+    file: NotRequired[str]
+    test: NotRequired[str]
+
+
+class SeriesSubject(TypedDict):
+    project: str
+    message_id: str
+
+
+class Entry(TypedDict):
+    command: str
+    env: dict[str, str]
+    config: NotRequired[str]
+    output: NotRequired[str]
+
+
+class Record(TypedDict):
+    subject: TreeSubject | SeriesSubject
+    entries: list[Entry]
+
+
+class Series(TypedDict):
+    commit: str
+    base: str
+    commits: list[dict[str, str]]
+
+
+class Objects(TypedDict):
+    commit: str
+    build: Build
+
+
+# The versions this validator knows. A file of any other is refused, so a
+# reader learns a version before a producer writes it (CHANGES.md).
+KNOWN = frozenset({1})
+# The names kbuild takes as ARCH: each directory of arch/, then each name its
+# top Makefile maps to one.
+ARCHES = frozenset(
+    {
+        "alpha",
+        "arc",
+        "arm",
+        "arm64",
+        "csky",
+        "hexagon",
+        "loongarch",
+        "m68k",
+        "microblaze",
+        "mips",
+        "nios2",
+        "openrisc",
+        "parisc",
+        "powerpc",
+        "riscv",
+        "s390",
+        "sh",
+        "sparc",
+        "um",
+        "x86",
+        "xtensa",
+        "i386",
+        "parisc64",
+        "sparc32",
+        "sparc64",
+        "x86_64",
+    }
+)
+COMPILERS = frozenset({"clang", "gcc"})
+# The abbreviated hash in the name git describe gives a commit that no tag
+# names: all of the name, or what follows a tag and a count.
+HASH = re.compile(r"(?:.+-\d+-g)?([0-9a-f]{12,})")
+# A home directory where a path starts, or right after an option as in
+# -I/home/x. Inside a longer path, home is a directory of the tree.
+HOME = re.compile(r"(?<![\w.~])(?:-\w+)?/(?:home|Users)/[^/\s]")
+# What moves from one run of a command to the next, dropped from a line before
+# two outputs are compared (README.md, "Output"): a kernel log's time stamp, a
+# code address, and the time diff prints after a file's name.
+STAMP = re.compile(r"^\[ *\d+\.\d+\]")
+ADDRESS = re.compile(r"0x[0-9a-fA-F]{6,}")
+DIFF_TIME = re.compile(r"^((?:---|\+\+\+) [^\t]*)\t.*")
+
+
+def match_pattern(
+    _validator: object, pattern: str, instance: object, _schema: object
+) -> Iterator[ValidationError]:
+    """Yield an error for a string that a pattern of its schema does not match.
+
+    The $ of JSON Schema matches at the end of a string alone. The $ of re
+    matches before a last line break too, and would pass a commit that ends in
+    one.
+    """
+    at_the_end = re.sub(r"(?<!\\)\$", r"\\Z", pattern)
+    if isinstance(instance, str) and not re.search(at_the_end, instance):
+        yield ValidationError(f"{instance!r} does not match {pattern!r}")
+
+
+Draft7 = cast(
+    "type[Validator]",
+    # The stubs of jsonschema give extend() no types.
+    validators.extend(  # pyright: ignore[reportUnknownMemberType]
+        Draft7Validator, {"pattern": match_pattern}
+    ),
+)
+HERE = Path(__file__).parent
+SCHEMAS: dict[str, Validator] = {
+    kind: Draft7(json.loads((HERE / f"{kind}.schema.json").read_text("utf-8")))
+    for kind in ("record", "series", "objects")
+}
+
+
+def closest(error: ValidationError) -> Iterator[ValidationError]:
+    """Yield the errors of the alternative of a oneOf that a value is closest to.
+
+    A value that fits no alternative fails each one, and the error of the
+    oneOf prints only the value. The closest alternative has the fewest errors
+    on the value itself, as a missing field is, and not on a field of it.
+    """
+    if not error.context:
+        yield error
+        return
+    alternatives = groupby(error.context, lambda inner: inner.relative_schema_path[0])
+    failures = [list(errors) for _, errors in alternatives]
+    on_value = [sum(not inner.relative_path for inner in errors) for errors in failures]
+    for inner in failures[on_value.index(min(on_value))]:
+        yield from closest(inner)
+
+
+@dataclass(frozen=True, slots=True)
+class Place:
+    """Where a file lies: under a series, a commit, or a build of a commit."""
+
+    project: str
+    # The directory of the commit, or of the series, whose name holds an @.
+    name: str
+    # The build's CONFIGURATION/ARCH/COMPILER; empty outside a build.
+    build: tuple[str, ...]
+    # The path below the build, or else below the commit or the series.
+    below: tuple[str, ...]
+
+    @property
+    def series(self) -> bool:
+        return "@" in self.name
+
+
+def locate(parts: tuple[str, ...]) -> Place | None:
+    """Return where a file lies, or None for one under no commit or series."""
+    if not parts[2:]:
+        return None
+    project, name, *rest = parts
+    if "@" not in name:
+        # A configuration is one directory or more, and a file lies below the
+        # compiler.
+        for at in range(1, len(rest) - 2):
+            if rest[at] in ARCHES and rest[at + 1] in COMPILERS:
+                build, below = rest[: at + 2], rest[at + 2 :]
+                return Place(project, name, tuple(build), tuple(below))
+    return Place(project, name, (), tuple(rest))
+
+
+def kind_of(place: Place) -> str:
+    """Return which schema a JSON file follows, by where it lies."""
+    if place.build and place.below == ("objects.json",):
+        return "objects"
+    if not place.series and not place.build and place.below == ("series.json",):
+        return "series"
+    return "record"
+
+
+def is_named(place: Place) -> bool:
+    """Return whether the format names a file that is not JSON, where it lies."""
+    if place.series:
+        return place.below == ("b4", "mbox.mbx")
+    return bool(place.build) and place.below == ("config",)
+
+
+def lines(output: str) -> list[str]:
+    """Return an output's lines in a fixed order, less what moves between runs."""
+    return sorted(
+        DIFF_TIME.sub(r"\1", ADDRESS.sub("", STAMP.sub("", line)))
+        for line in output.splitlines()
+    )
+
+
+def run_of(entry: Entry) -> str:
+    """Return what is equal in two entries of one run: all but who ran it."""
+    output = lines(entry.get("output", ""))
+    return json.dumps({**entry, "output": output, "invocations": []}, sort_keys=True)
+
+
+def ran_in(env: dict[str, str], arch: str, compiler: str) -> bool:
+    """Return whether an entry's ARCH and LLVM name the build it lies under.
+
+    An entry that sets ARCH is of make, which compiles with clang under any
+    LLVM that is not empty, and with gcc under none. An entry that sets
+    neither, as one of fstests, names no build.
+    """
+    if env.get("ARCH", arch) != arch:
+        return False
+    if env.get("LLVM"):
+        return compiler == "clang"
+    return "ARCH" not in env or compiler == "gcc"
+
+
+def check_commit(place: Place, sha: str) -> Iterator[str]:
+    """Yield the problem of a directory named for another commit.
+
+    A tag tells nothing of its commit, so a directory named for one passes.
+    """
+    found = HASH.fullmatch(place.name)
+    if found and not sha.startswith(found[1]):
+        yield f"lies under {place.name}/, which does not name {sha}"
+
+
+def check_build(place: Place, build: Build) -> Iterator[str]:
+    """Yield how the build a file names differs from the one it lies under."""
+    configuration = build["configuration"]
+    directories = (*configuration, build["arch"], build["compiler"])
+    if configuration != sorted(configuration):
+        yield "names its configuration out of order; sort it by name"
+    # A path names a build by its ARCH, so one of another ARCH lies under none.
+    if build["arch"] not in ARCHES:
+        yield f"names {build['arch']}, which is no ARCH of kbuild's"
+    elif directories != place.build:
+        yield f"lies outside its build, {'/'.join(directories)}/"
+
+
+def check_tree(place: Place, subject: TreeSubject) -> Iterator[str]:
+    yield from check_commit(place, subject["commit"])
+    if "build" in subject:
+        yield from check_build(place, subject["build"])
+    elif place.build:
+        yield "lies under a build that its subject does not name"
+    # A record is named for its tool, then for what the tool was run on.
+    path = "/".join(place.below)
+    for target in (subject.get("file"), subject.get("test")):
+        if target is not None and not path.endswith(f"/{target}.json"):
+            yield f"is not named for {target}"
+
+
+def check_entries(place: Place, entries: list[Entry]) -> Iterator[str]:
+    runs: dict[str, int] = {}
+    for number, entry in enumerate(entries, 1):
+        if (first := runs.setdefault(run_of(entry), number)) != number:
+            yield f"entry {number} is the run of entry {first}; add to its invocations"
+        if place.build and "config" not in entry:
+            yield f"entry {number} has no config, and lies under a build"
+        if not place.build and "config" in entry:
+            yield f"entry {number} has a config, and lies under no build"
+        if place.build and not ran_in(entry["env"], *place.build[-2:]):
+            yield f"entry {number} sets an ARCH or LLVM its build does not name"
+        texts = (entry["command"], entry.get("output", ""), *entry["env"].values())
+        if any(HOME.search(text) for text in texts):
+            yield f"entry {number} names a home directory; write it as ~"
+
+
+def check_record(place: Place, record: Record) -> Iterator[str]:
+    subject = record["subject"]
+    if place.project != subject["project"]:
+        yield f"lies under {place.project}/, not {subject['project']}/"
+    if "message_id" not in subject:
+        if place.series:
+            yield "lies under a series, and its subject is a commit"
+        else:
+            yield from check_tree(place, subject)
+    elif not place.series:
+        yield "lies under a commit, and its subject is a series"
+    elif place.name != subject["message_id"]:
+        yield f"lies under {place.name}/, not {subject['message_id']}/"
+    yield from check_entries(place, record["entries"])
+
+
+def check_series(place: Place, series: Series) -> Iterator[str]:
+    yield from check_commit(place, series["commit"])
+    commits = series["commits"]
+    last = commits[-1]["commit"] if commits else series["base"]
+    if series["commit"] != last:
+        yield "names a commit that is neither its last one nor, with none, its base"
+
+
+def check_objects(place: Place, objects: Objects) -> Iterator[str]:
+    yield from check_commit(place, objects["commit"])
+    yield from check_build(place, objects["build"])
+
+
+CHECKS: dict[str, Callable[[Place, Any], Iterator[str]]] = {
+    "record": check_record,
+    "series": check_series,
+    "objects": check_objects,
+}
+
+
+def check_json(file: Path, place: Place) -> Iterator[str]:
+    try:
+        data: object = json.loads(file.read_text(encoding="utf-8"))
+    except (ValueError, RecursionError) as error:
+        yield f"is not JSON in UTF-8: {error}"
+        return
+    if not isinstance(data, dict):
+        yield "is not a JSON object"
+        return
+    fields = cast("dict[str, Any]", data)
+    version = fields.get("schema")
+    if not isinstance(version, int):
+        yield "has no integer schema"
+        return
+    if version not in KNOWN:
+        yield f"schema {version} is not a version this validator knows"
+        return
+    kind = kind_of(place)
+    found = SCHEMAS[kind].iter_errors(fields)
+    errors = [error for outer in found for error in closest(outer)]
+    for error in errors:
+        where = "/".join(map(str, error.absolute_path))
+        yield f"{where}: {error.message}" if where else error.message
+    if not errors:
+        yield from CHECKS[kind](place, fields)
+
+
+def check_file(file: Path, parts: tuple[str, ...]) -> Iterator[str]:
+    place = locate(parts)
+    if file.is_symlink():
+        yield "is a symbolic link"
+    elif place is None:
+        yield "lies under no commit or series"
+    elif file.name.endswith(".json"):
+        yield from check_json(file, place)
+    elif not is_named(place):
+        yield "is not a file the format names"
+
+
+def files(directory: Path) -> Iterator[Path]:
+    """Yield each file under a directory, in order, and none of a hidden one."""
+    for path in sorted(directory.iterdir()):
+        if path.is_symlink() or not path.is_dir():
+            yield path
+        elif not path.name.startswith("."):
+            yield from files(path)
+
+
+def check(records: Path) -> Iterator[tuple[str, str]]:
+    """Yield each file under records that breaks the format, and why."""
+    for file in files(records):
+        relative = file.relative_to(records)
+        # A linked worktree keeps .git as a file.
+        if relative.parts == (".git",):
+            continue
+        for problem in check_file(file, relative.parts):
+            yield relative.as_posix(), problem
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=(__doc__ or "").partition("\n")[0])
+    parser.add_argument("--records", type=Path, required=True, metavar="DIR")
+    records: Path = parser.parse_args(argv).records
+    if not records.is_dir():
+        parser.error(f"{records} is not a directory")
+    problems = [f"{path}: {problem}\n" for path, problem in check(records)]
+    sys.stdout.writelines(problems)
+    return 1 if problems else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -351,3 +351,21 @@ Each file names the version it follows as `schema`. A change to the
 format, including a change of meaning that leaves the fields as they
 are, raises the version by one and adds an entry to
 [CHANGES.md](CHANGES.md).
+
+## Checking
+
+```shell
+format/validate.py --records ../records
+```
+
+`validate.py` prints each file that breaks the format, and why, and exits
+1 if any does. It learns a version before any producer writes it, and
+refuses a version it does not know. It needs Python 3.11 or later and
+[jsonschema], which a distribution has as `python3-jsonschema`. Its header
+declares both for a tool that reads [PEP 723].
+
+A producer complies with a version of the format when `validate.py`
+accepts every file it writes.
+
+[jsonschema]: https://python-jsonschema.readthedocs.io/
+[PEP 723]: https://peps.python.org/pep-0723/

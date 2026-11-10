@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: copyleft-next-0.3.1
+# Ruff lints what black formats, at black's line length.
+line-length = 88
+target-version = "py313"
+
+[lint]
+select = ["ALL"]
+ignore = [
+  # Black decides where a trailing comma goes.
+  "COM812",
+  # A file names its licence in an SPDX line, and carries no copyright
+  # notice.
+  "CPY001",
+  # A docstring goes where the name and the types leave something to say.
+  "D1",
+  # D211 and D212 are the sides taken of two pairs that exclude each other.
+  "D203",
+  "D213",
+  # The tests use unittest, which the standard library has, and not pytest.
+  "PT009",
+  "PT027",
+]
+
+[lint.per-file-ignores]
+# unittest finds the tests as top-level modules, not as a package.
+"tests/*" = ["INP001"]
