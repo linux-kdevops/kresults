@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Objects",
+  "description": "What one build compiles of a series' C files, as PROJECT/COMMIT/CONFIGURATION/ARCH/COMPILER/objects.json beside the build's config (format/README.md)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "objects",
+    "unbuilt"
+  ],
+  "properties": {
+    "schema": {
+      "description": "The format version the file follows (format/CHANGES.md)",
+      "const": 1
+    },
+    "objects": {
+      "description": "The objects the build compiles from the series' C files",
+      "$ref": "#/definitions/paths"
+    },
+    "unbuilt": {
+      "description": "The series' C files outside tools/, scripts/ and Documentation/ that the build does not compile",
+      "$ref": "#/definitions/paths"
+    }
+  },
+  "definitions": {
+    "paths": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

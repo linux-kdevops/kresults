@@ -1,0 +1,148 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Series",
+  "description": "A commit and how it came: its base, the commits the base lacks and the files they change, as PROJECT/COMMIT/series.json (format/README.md). A series.json that lists no commits is a base's.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "commit",
+    "message_id",
+    "ref",
+    "trees",
+    "base",
+    "base_name",
+    "base_trees",
+    "commits",
+    "sources",
+    "docs",
+    "added"
+  ],
+  "properties": {
+    "schema": {
+      "description": "The format version the file follows (format/CHANGES.md)",
+      "const": 1
+    },
+    "commit": {
+      "description": "The tree's commit, whole: the last of commits, or the base",
+      "$ref": "#/definitions/sha"
+    },
+    "message_id": {
+      "description": "The Message-ID of the series' first message, without <>, whose records lie under PROJECT/MESSAGE-ID/; empty for a commit that came from no message",
+      "type": "string",
+      "pattern": "^([^<>\\s/]+@[^<>\\s/]+)?$"
+    },
+    "ref": {
+      "description": "The ref the run was given, such as xfs-fix, for-next or v7.3; empty for a series taken by its Message-ID",
+      "type": "string"
+    },
+    "trees": {
+      "description": "The public trees with a branch that holds commit, the one to link it to first; empty when none does",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "remote",
+          "url"
+        ],
+        "properties": {
+          "remote": {
+            "type": "string",
+            "minLength": 1
+          },
+          "url": {
+            "type": "string",
+            "pattern": "^https?://"
+          }
+        }
+      }
+    },
+    "base": {
+      "description": "The commit the series starts from, whole",
+      "$ref": "#/definitions/sha"
+    },
+    "base_name": {
+      "description": "The directory the base's records lie under",
+      "type": "string",
+      "minLength": 1
+    },
+    "base_trees": {
+      "description": "The public trees with a branch that holds base, the one to link it to first; empty when only a tag does",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "remote",
+          "url"
+        ],
+        "properties": {
+          "remote": {
+            "type": "string",
+            "minLength": 1
+          },
+          "url": {
+            "type": "string",
+            "pattern": "^https?://"
+          }
+        }
+      }
+    },
+    "commits": {
+      "description": "The series' commits, oldest first",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "commit",
+          "subject",
+          "author",
+          "link"
+        ],
+        "properties": {
+          "commit": {
+            "$ref": "#/definitions/sha"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "author": {
+            "description": "Name <email>",
+            "type": "string"
+          },
+          "link": {
+            "description": "The commit's last Link: trailer; empty without one",
+            "type": "string"
+          }
+        }
+      }
+    },
+    "sources": {
+      "description": "The C files and headers the series changes",
+      "$ref": "#/definitions/paths"
+    },
+    "docs": {
+      "description": "The directories of Documentation with an index.rst that the series changes",
+      "$ref": "#/definitions/paths"
+    },
+    "added": {
+      "description": "The files the series adds",
+      "$ref": "#/definitions/paths"
+    }
+  },
+  "definitions": {
+    "sha": {
+      "type": "string",
+      "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "paths": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

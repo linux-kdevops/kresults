@@ -1,0 +1,283 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Record",
+  "description": "What tools reported on one subject, one entry per distinct run (format/README.md).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "subject",
+    "entries"
+  ],
+  "properties": {
+    "schema": {
+      "description": "The format version the file follows (format/CHANGES.md)",
+      "const": 1
+    },
+    "subject": {
+      "oneOf": [
+        {
+          "$ref": "#/definitions/tree"
+        },
+        {
+          "$ref": "#/definitions/series"
+        }
+      ]
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/entry"
+      }
+    }
+  },
+  "definitions": {
+    "tree": {
+      "description": "A commit of a project, or a file, object or test in it",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project",
+        "commit"
+      ],
+      "properties": {
+        "project": {
+          "$ref": "#/definitions/project"
+        },
+        "commit": {
+          "description": "The commit the tool ran on, whole",
+          "$ref": "#/definitions/sha"
+        },
+        "file": {
+          "description": "The file or object the tool checked, from the top of the tree; absent for a check of the whole tree",
+          "$ref": "#/definitions/relative"
+        },
+        "test": {
+          "description": "The test as its suite names it, such as generic/001",
+          "$ref": "#/definitions/relative"
+        },
+        "range": {
+          "description": "The commits the tool checked as patches, BASE..COMMIT, both whole; absent unless it checked them",
+          "type": "string",
+          "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})\\.\\.([0-9a-f]{40}|[0-9a-f]{64})$"
+        }
+      }
+    },
+    "series": {
+      "description": "A series by the Message-ID of its first message, before it applies to any commit",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project",
+        "message_id"
+      ],
+      "properties": {
+        "project": {
+          "$ref": "#/definitions/project"
+        },
+        "message_id": {
+          "$ref": "#/definitions/message_id"
+        }
+      }
+    },
+    "entry": {
+      "description": "One run of a command and what it reported; an equal run is added to invocations",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tools",
+        "command",
+        "env",
+        "status",
+        "exit",
+        "invocations"
+      ],
+      "properties": {
+        "tools": {
+          "description": "The tool the command runs first, then those whose version changes what it reports, such as the compiler under sparse",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/tool"
+          }
+        },
+        "command": {
+          "description": "The command as run at the top of the tree, its paths relative to it, less the variables in env",
+          "type": "string",
+          "minLength": 1
+        },
+        "env": {
+          "description": "The environment variables that change what the command reports, as set when it ran",
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "config": {
+          "description": "sha256: and the SHA-256 of the .config the command ran under; absent when it reads none",
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "status": {
+          "description": "pass: the code passed; fail: the code failed; skip: a test that did not run, its reason as output; error: the tool did not finish for a cause outside the code",
+          "enum": [
+            "pass",
+            "fail",
+            "skip",
+            "error"
+          ]
+        },
+        "exit": {
+          "description": "The command's exit status; for a test, 1 when it failed, else 0",
+          "type": "integer",
+          "minimum": 0
+        },
+        "output": {
+          "description": "The errors and warnings the tool printed, verbatim but for the paths format/README.md drops; absent when it printed none",
+          "type": "string",
+          "minLength": 1
+        },
+        "invocations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/invocation"
+          }
+        }
+      }
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "build"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "description": "The version the tool prints of itself; empty for a tool that prints none",
+          "type": "string"
+        },
+        "build": {
+          "description": "The exact build: its Nix store path, git describe of the source it was built from, a distribution's package and version, or tree for a tool in the tree under test",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "invocation": {
+      "description": "Who ran the entry's command, when and where",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producer",
+        "origin",
+        "run",
+        "started",
+        "seconds",
+        "machine"
+      ],
+      "properties": {
+        "producer": {
+          "description": "The engine that ran the command",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "version"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "origin": {
+          "description": "The lab that ran it, by the name it records under",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "run": {
+          "description": "The producer's name for the run",
+          "type": "string",
+          "minLength": 1
+        },
+        "started": {
+          "description": "When the command started, in UTC",
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "seconds": {
+          "description": "How long the command ran, in whole seconds",
+          "type": "integer",
+          "minimum": 0
+        },
+        "machine": {
+          "description": "The machine the command ran on; never its name",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "arch",
+            "cpu",
+            "cpus",
+            "memory"
+          ],
+          "properties": {
+            "arch": {
+              "description": "uname --machine",
+              "type": "string",
+              "minLength": 1
+            },
+            "cpu": {
+              "description": "lscpu's Model name",
+              "type": "string",
+              "minLength": 1
+            },
+            "cpus": {
+              "description": "The CPUs the command could use, as nproc counts them",
+              "type": "integer",
+              "minimum": 1
+            },
+            "memory": {
+              "description": "The machine's memory, in bytes",
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    },
+    "project": {
+      "description": "The project, as the top directory of the Results names it",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "sha": {
+      "type": "string",
+      "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "relative": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*(^|/)\\.\\.?(/|$)).+$"
+    },
+    "message_id": {
+      "description": "The Message-ID of a series' first message, without <>: the message posted, or the first of a local mbox",
+      "type": "string",
+      "pattern": "^[^<>\\s/]+@[^<>\\s/]+$"
+    }
+  }
+}

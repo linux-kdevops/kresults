@@ -1,0 +1,284 @@
+<!-- SPDX-License-Identifier: copyleft-next-0.3.1 -->
+
+# The records
+
+This is version 1 of the format of the records
+([CHANGES.md](CHANGES.md)), which this repository keeps on its `records`
+branch. Any engine may write them.
+[record.schema.json](record.schema.json),
+[series.schema.json](series.schema.json) and
+[objects.schema.json](objects.schema.json) define each field.
+
+## What a record holds
+
+A record is what tools reported on one subject: a commit of a project,
+a file, object or test in it, or a series by its Message-ID. It holds
+one entry per distinct run. An entry is the tools with their
+versions and builds, the command, its environment and `.config`, and
+what the run reported: the verdict, the exit status and the output. A
+run equal to an entry in all of these is added to its `invocations`,
+and any difference makes a new entry. Two entries that differ only in
+what they reported are a flaky test or tool.
+
+The engine that ran a command is not part of the entry. An invocation
+names it, with the lab, the run, the time and the machine.
+
+sparse on `init/main.o` of a series, run by two labs with the same
+sparse, built two ways:
+
+```json
+{
+  "schema": 1,
+  "subject": {"project": "linux", "commit": "1da4e6e1d71d…",
+              "file": "init/main.o"},
+  "entries": [
+    {
+      "tools": [
+        {"name": "sparse", "version": "0.6.4",
+         "build": "/nix/store/…-sparse-0.6.4"},
+        {"name": "clang", "version": "21.1.8",
+         "build": "/nix/store/…-clang-21.1.8"}
+      ],
+      "command": "make -s C=2 CF=-Wsparse-error init/main.o",
+      "env": {"ARCH": "x86_64", "LLVM": "1"},
+      "config": "sha256:1b15d805…",
+      "status": "fail", "exit": 2,
+      "output": "init/main.c:15:2: warning: …",
+      "invocations": [
+        {"producer": {"name": "kdevops-ng", "version": "5c2e9a41d0b7…"},
+         "origin": "lab-a", "run": "1042",
+         "started": "2026-11-10T09:12:03Z", "seconds": 3,
+         "machine": {"arch": "x86_64", "cpu": "AMD Ryzen 9 7950X",
+                     "cpus": 32, "memory": 134217728000}}
+      ]
+    },
+    {
+      "tools": [
+        {"name": "sparse", "version": "0.6.4", "build": "v0.6.4"},
+        {"name": "clang", "version": "21.1.8", "build": "llvmorg-21.1.8"}
+      ],
+      "command": "make -s C=2 CF=-Wsparse-error init/main.o",
+      "env": {"ARCH": "x86_64", "LLVM": "1"},
+      "config": "sha256:1b15d805…",
+      "status": "fail", "exit": 2,
+      "output": "init/main.c:15:2: warning: …",
+      "invocations": [
+        {"producer": {"name": "other-ci", "version": "4.2"},
+         "origin": "lab-b", "…": "…"}
+      ]
+    }
+  ]
+}
+```
+
+An engine adds a run to the entry it equals, or adds an entry, and
+writes the file whole. An entry of a series is set against the entry
+of its base that has the same tools, command and environment, so a
+series is compared only with a base that ran what it ran. A reader
+says when their `.config` differs.
+
+## Tools
+
+`tools` lists the tool the command runs first, then each tool whose
+version changes what it reports: the compiler under sparse, the
+filesystem's utilities under fstests. `version` is the version the tool
+prints of itself, as `sparse --version` does, and is empty for a tool
+that prints none. A patched tool prints the version it was patched
+from, so `build` names the exact build, as one of:
+
+- a Nix store path, `/nix/store/<hash>-sparse-0.6.4`;
+- `git describe` of the source it was built from,
+  `v0.6.4-12-g0123456789ab`;
+- a distribution's package and its version, `debian:sparse 0.6.4-4`;
+- `tree` for a tool in the tree under test, such as
+  `scripts/checkpatch.pl`, which is built from the subject's commit.
+
+Two runs whose builds differ are two entries, even when their versions
+agree.
+
+## Command and environment
+
+`command` is the command as run at the top of the tree, its paths
+relative to it: `make -s C=2 CF=-Wsparse-error init/main.o`. It leaves
+out the options that only place files, such as make's `-C` and `O=`,
+and the variables in `env`. `env` holds each environment variable that
+changes what the command reports, as it was set. Running `command` with
+`env`'s variables, at the top of a tree at the same commit and build,
+repeats the run.
+
+`env` lists at least these, each when set and not empty:
+
+- make in a kernel tree: `ARCH`, `LLVM`, `CROSS_COMPILE`, `KCFLAGS` and
+  `KBUILD_EXTRA_WARN`;
+- fstests: each variable of the section that `check -s` runs, as its
+  configuration file sets it.
+
+`config` is `sha256:` and the SHA-256 of the `.config` the command ran
+under, absent when it reads none. A profile's fragments can change
+under the same name, so two runs at the same path may differ in
+`config`, and then they are two entries. A command that only prepares
+the `.config`, such as copying a defconfig or editing it with
+`scripts/config`, prints nothing and leaves no record: the `.config`
+it made is the `config` of the command that runs next.
+
+## Verdicts
+
+- `pass`: the command exited 0, or the test passed.
+- `fail`: the code failed: the command exited non-zero, the test failed,
+  or the machine under test crashed or hung during the test.
+- `skip`: the test did not run, with the reason as its output. A test
+  run only to check its requirements leaves no record.
+- `error`: the tool did not finish for a cause outside the code under
+  test, such as the machine that ran the tool or the tool itself
+  failing. A comparison counts it neither introduced nor fixed.
+
+`exit` is the command's exit status, and a test's is 1 when it failed,
+else 0. A run stopped on purpose, as when its engine cancels it, leaves
+nothing.
+
+## Output
+
+`output` holds the errors and warnings the tool printed: what it wrote
+to standard error, and to standard output for a tool that reports
+there, such as `checkpatch.pl`. For a test it is what the suite
+reported of it: its failure, standard error and kernel log, or why it
+skipped. Nothing parses it, so a run keeps progress out with the tool's
+own options, as `make -s` does. `output` is absent when the tool printed
+nothing.
+
+The records may be public. `output`, `command` and `env`:
+
+- give paths in the tree relative to it, and leave out the absolute
+  paths of the build directory and of the engine;
+- write the home directory as `~`;
+- name no host.
+
+## Invocations
+
+Each invocation carries every field:
+
+- `producer`: the name and version of the engine that ran the command;
+- `origin`: the lab, by the name it records under, in lowercase
+  letters, digits and `-`;
+- `run`: the producer's name for the run, such as its run id;
+- `started`: when the command started, in UTC, `2026-11-10T09:12:03Z`;
+- `seconds`: how long it ran;
+- `machine`: what it ran on, never its name: `arch` as `uname --machine`
+  gives it, `cpu` as lscpu's Model name, `cpus` as nproc counts them,
+  and `memory` in bytes. For a test, the machine under test.
+
+Invocations are kept oldest first.
+
+## Where records go
+
+A record's path names its subject, and the subject names it whole.
+Under a project lie its commits and its series:
+
+```text
+linux/                                   the project
+├── v7.3-2-g1da4e6e1d71d/                a commit
+│   ├── series.json                      how it came, and its base
+│   ├── tinyconfig/x86_64/clang/         a build: configuration, ARCH, compiler
+│   │   ├── config                       its .config
+│   │   ├── objects.json                 what it compiles of the series
+│   │   ├── make/
+│   │   │   ├── tinyconfig.json          make tinyconfig
+│   │   │   ├── all.json                 make, the build
+│   │   │   ├── dir-pkg.json             make dir-pkg
+│   │   │   ├── checkstack.json
+│   │   │   └── htmldocs/filesystems.json
+│   │   ├── checkpatch.pl.json
+│   │   ├── clang-tidy/init/main.o.json
+│   │   └── sparse/init/main.o.json      make C=2 init/main.o
+│   ├── block-layer/nvm-express-driver/x86_64/clang/
+│   │   └── make/all.json
+│   └── fstests/xfs-filesystem/x86_64/clang/
+│       └── fstests/xfs_bs4k_ss512/generic/001.json
+└── <message-id>/                        a series
+    └── b4/
+        ├── mbox.json                    b4 mbox --single-message
+        ├── mbox.mbx                     the message it saved
+        └── shazam.json                  b4 shazam
+```
+
+- A commit is named as `git describe --tags --match 'v[0-9]*'
+  --abbrev=12 --always` names it in a clone with the project's release
+  tags.
+- A series is named by the Message-ID of its first message, without
+  `<>`: the message posted, or the first of a local mbox. A Message-ID
+  always holds an `@` and a commit's name never does.
+- A build is its configuration, kbuild's `ARCH` and the compiler, each
+  a directory; the compiler is `clang` under `LLVM=1`, else `gcc`. The
+  configuration is the make target that wrote the `.config`, such as
+  `tinyconfig`, or the profiles of fragments merged into it, one
+  directory each, sorted by name so that a set of profiles has one
+  path: `block-layer/nvm-express-driver/`. A profile is named after the
+  `MAINTAINERS` entry whose code it configures: the entry's title in
+  lower case, each run of other characters a hyphen, `block-layer` for
+  BLOCK LAYER. A profile for no entry's code is named for what it
+  configures, `fstests` for the guest fstests runs in. The configuration
+  ends at the first directory named for an `ARCH` with one named for a
+  compiler below it, so no profile takes either name.
+- Under a build or a series, a record is named for the tool that was
+  run, as the tool names itself, then for what it was run on:
+  - a make target under `make/`, `make/htmldocs/filesystems.json` for
+    `make SPHINXDIRS=filesystems htmldocs`, and `make/all.json` for
+    make with no target, whose default goal is `all`;
+  - a checker that make runs on an object, with `C=2`, `W=` or
+    `CLIPPY=1`, or that a launcher in the tree runs, by the checker's
+    name, since the target there is the object:
+    `sparse/init/main.o.json`, `clang/init/main.o.json` under `W=1e`,
+    `clang-tidy/init/main.o.json` from `run-clang-tools.py`;
+  - a program or a script run directly by its own name:
+    `checkpatch.pl.json`, `kernel-doc/init/main.c.json`; a program run
+    with a subcommand by the program, then the subcommand,
+    `b4/shazam.json`; a git command by the name of its manual page,
+    `git-am.json`;
+  - a test suite by its name, then the section that ran the test:
+    `fstests/xfs_bs4k_ss512/generic/001.json`.
+
+  The same tool run with other flags is another entry of the same
+  record, as `checkpatch.pl` is with and without `--strict`.
+- A directory or file name is at most 255 bytes, the limit of Linux
+  filesystems.
+
+## A commit and its series
+
+Each commit holds `series.json`, which says how the commit came and
+what its records are set against:
+
+- `message_id`: the series it was applied from, whose records lie under
+  `<project>/<message-id>/`; empty for a commit that came from no
+  message;
+- `ref`: the ref the run was given, such as `xfs-fix`, `for-next` or
+  `v7.3`; empty for a series taken by its Message-ID;
+- `trees`: the public trees with a branch that holds the commit, the
+  first one to link it to; empty for a local branch;
+- `base`, `base_name` and `base_trees`: the commit the series starts
+  from, the directory its records lie under, and the public trees with
+  a branch that holds it;
+- `commits`: the commits the base lacks, oldest first, each with its
+  subject, author and last `Link:` trailer. A `series.json` that lists
+  none is a base's;
+- `sources`, `docs` and `added`: the C files and headers the commits
+  change, the directories of Documentation with an `index.rst` they
+  change, and the files they add.
+
+Each build of a series holds `objects.json`: the objects it compiles
+from the series' C files, and the C files outside `tools/`, `scripts/`
+and `Documentation/` it does not compile. No tool prints these lists:
+the producer reads them from the `.cmd` file kbuild writes for each
+object, as `config` is the `.config` the build's last record ran under.
+
+A series' own records lie under its Message-ID: `b4/mbox.json` for
+fetching the message posted, `b4/mbox.mbx` for the message saved, and
+`b4/shazam.json` for applying the series, its output what b4 printed.
+A reader takes the series' subject, author, date and lists from
+`mbox.mbx`. A series that does not apply has these records alone.
+
+## Versions
+
+Each file names the version it follows as `schema`. A change to the
+format, including a change of meaning that leaves the fields as they
+are, raises the version by one and adds an entry to
+[CHANGES.md](CHANGES.md).
