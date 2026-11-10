@@ -39,6 +39,15 @@ the version (`format/CHANGES.md`).
   file one result twice. A command lies under a build when it reads the
   `.config` or what the build made: kbuild's `no-dot-config-targets` and
   each script's source say which.
+- Profiles are sorted by the code points of their names, as `LC_ALL=C
+  sort` does. A locale's order differs between hosts, and two of them
+  would name one build twice.
+- The text describes every field of a subject and of `series.json`, so
+  that a producer can write a record from it. The schemas stay the exact
+  form.
+- A series whose Message-ID holds a `/` is not recorded. No tool that
+  sends patches makes one, and an escape would be a rule to write and to
+  check for a case not yet met.
 
 ## Open
 
@@ -47,15 +56,8 @@ the version (`format/CHANGES.md`).
    `checkpatch.pl.json` under a build passes.
 2. The directory of a native build. With no `ARCH` set, kbuild takes `x86`
    on an x86_64 host. The format does not say which name files that build.
-3. The order of profiles. "Sorted by name" gives no collation. `validate`
-   compares code points, where `block-layer` comes before `blockdev`, and
-   a locale's order puts it after.
-4. What must be there. Nothing requires a commit's `series.json`, a
+3. What must be there. Nothing requires a commit's `series.json`, a
    build's `config` or the `objects.json` of a series' build, and the hash
    of `config` is compared with no entry.
-5. A verdict against its exit status. `pass` with an exit status of 2
+4. A verdict against its exit status. `pass` with an exit status of 2
    passes, and so does `skip` with no output.
-6. What the text leaves to the schemas alone: `subject.test`,
-   `subject.range` and the `commit` of `series.json`.
-7. A Message-ID that holds a `/`. A mail may carry one, and the schema
-   refuses it, since it would be two directories.

@@ -24,6 +24,16 @@ what they reported are a flaky test or tool.
 The producer that ran a command is not part of the entry. An invocation
 names it, with the lab, the run, the time and the machine.
 
+`subject` names the project and the whole commit, then what narrows it:
+
+- `build`, for a command that ran in one (below);
+- `file`, a file or an object, from the top of the tree;
+- `test`, a test as its suite names it, such as `generic/001`;
+- `range`, `BASE..COMMIT` with both whole, for a tool that read the
+  commits as patches.
+
+The subject of a series is the project and its `message_id`.
+
 sparse on `init/main.o` of a series, run by two labs with the same
 sparse, built two ways:
 
@@ -220,14 +230,16 @@ linux/                                   the project
   tags.
 - A series is named by the Message-ID of its first message, without
   `<>`: the message posted, or the first of a local mbox. A Message-ID
-  always holds an `@` and a commit's name never does.
+  always holds an `@` and a commit's name never does. One that holds a
+  `/` would be two directories, and its series is not recorded.
 - A build is its configuration, kbuild's `ARCH` and the compiler, each
   a directory. The compiler is `clang` when `LLVM` is set and not empty,
-  else `gcc`. The
-  configuration is the make target that wrote the `.config`, such as
-  `tinyconfig`, or the profiles of fragments merged into it, one
-  directory each, sorted by name so that a set of profiles has one
-  path: `block-layer/nvm-express-driver/`. A profile is named after the
+  else `gcc`. The configuration is the make target that wrote the
+  `.config`, such as `tinyconfig`, or the profiles of fragments merged
+  into it, one directory each, sorted by name so that a set of profiles
+  has one path: `block-layer/nvm-express-driver/`. The order is that of
+  the names' code points, as `LC_ALL=C sort` gives it, the same on every
+  host. A profile is named after the
   `MAINTAINERS` entry whose code it configures: the entry's title in
   lower case, each run of other characters a hyphen, `block-layer` for
   BLOCK LAYER. A profile for no entry's code is named for what it
@@ -316,6 +328,7 @@ Under a series:
 Each commit holds `series.json`, which says how the commit came and
 what its records are set against:
 
+- `commit`: the commit, whole;
 - `message_id`: the series it was applied from, whose records lie under
   `<project>/<message-id>/`; empty for a commit that came from no
   message;
