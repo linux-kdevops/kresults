@@ -101,8 +101,8 @@
             }
             ''
               cd ${./.}
-              black --check format tests
-              ruff check --no-cache format tests
+              black --check format scripts tests
+              ruff check --no-cache format scripts tests
               HOME=$TMPDIR pyright
               touch $out
             '';
@@ -120,6 +120,15 @@
               python3 -m unittest discover --start-directory tests
               touch $out
             '';
+
+        # designs/writing.md, "The checks".
+        prose = pkgs.runCommand "kresults-prose" { nativeBuildInputs = [ pkgs.python3 ]; } ''
+          cd ${./.}
+          python3 scripts/check-prose.py --file *.md designs/*.md docs/*.rst \
+            format/*.md format/*.py scripts/*.py tests/*.py units/user/* \
+            flake.nix ruff.toml
+          touch $out
+        '';
 
         # Sphinx with its warnings as errors, and the pages at 80 columns.
         docs =

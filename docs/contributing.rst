@@ -6,10 +6,10 @@ Contributing
 
 Patches go to ``kdevops@lists.linux.dev``. A change is reviewed against the
 decisions in :src:`designs/format.md` and :src:`designs/site.md`, and its
-commits and prose follow kdevops-ng's `writing rules`_.
+commits and prose follow :src:`designs/writing.md`.
 
-One command runs the linters, the tests and the build of these pages, each
-with the flake's pinned tools:
+One command runs the linters, the prose check, the tests and the build of
+these pages, each with the flake's pinned tools:
 
 .. code-block:: console
 
@@ -39,4 +39,3 @@ each save:
 .. _Sphinx: https://www.sphinx-doc.org
 .. _sphinx-autobuild: https://github.com/sphinx-doc/sphinx-autobuild
 .. _sphinx-copybutton: https://sphinx-copybutton.readthedocs.io
-.. _writing rules: https://github.com/linux-kdevops/kdevops-ng/blob/main/designs/writing.md

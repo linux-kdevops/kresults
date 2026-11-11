@@ -42,12 +42,11 @@ documentation: the format, its versions, and how to deploy the programs
 that file, check and render records. [designs/](designs/) holds the
 decisions on the format and the site.
 
-Patches go to <kdevops@lists.linux.dev>, written as kdevops-ng's
-[designs/writing.md] asks. `AGENTS.md` is the map for agents.
+Patches go to <kdevops@lists.linux.dev>, written as
+[designs/writing.md](designs/writing.md) asks. `AGENTS.md` is the map for
+agents.
 
 kresults is written with coding assistants; a person reviews and signs off
 every commit.
 
 License: copyleft-next-0.3.1.
-
-[designs/writing.md]: https://github.com/linux-kdevops/kdevops-ng/blob/main/designs/writing.md

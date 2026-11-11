@@ -9,8 +9,8 @@ description: >-
 
 # Writing in kresults
 
-Read kdevops-ng's [designs/writing.md] first. It is the rule here too, and
-this is the pass a draft gets before it is committed.
+Read `designs/writing.md` first. It is the rule, and this is the pass a
+draft gets before it is committed.
 
 1. Draft to the rules: the problem first, then why, in the imperative.
 2. Remove what marks generated text, and add nothing:
@@ -30,5 +30,3 @@ this is the pass a draft gets before it is committed.
    trailer is the owner's `Signed-off-by`.
 5. Hand anything longer than a few lines to a second reader, with the
    brief at the end of the writing rules.
-
-[designs/writing.md]: https://github.com/linux-kdevops/kdevops-ng/blob/main/designs/writing.md

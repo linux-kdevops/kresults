@@ -30,3 +30,7 @@ ignore = [
 # A RecordError's message is the reason a page shows, written where it is
 # found.
 "format/render.py" = ["D401", "EM101", "EM102", "TRY003"]
+# The prose check is a command: it reports on standard output and runs git
+# on arguments of its own, as its tests run it.
+"scripts/check-prose.py" = ["S603", "T201"]
+"tests/test_check_prose.py" = ["S603"]
