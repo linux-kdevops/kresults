@@ -463,6 +463,67 @@ class RecordTest(unittest.TestCase):
         (entry,) = self.entries(f"{BUILD}/make/tinyconfig.json")
         self.assertEqual(entry["command"], "make tinyconfig")
 
+    def test_a_command_names_its_record_and_its_first_tool(self) -> None:
+        self.without = ("--output", "--tool")
+        said = self.make("--command=make")
+        self.assertIn(f"record: {self.records / MAKE}\n", said)
+        (entry,) = self.entries()
+        self.assertEqual(entry["command"], "make")
+        tools = [tool("make", "4.4.1"), tool("gcc", "14.2.0")]
+        self.assertEqual(entry["tools"], tools)
+
+    def test_a_command_names_the_record_of_its_configuration(self) -> None:
+        self.without = ("--configuration", "--output", "--tool")
+        (self.tree / "build" / "name").write_text("tinyconfig\n")
+        self.make("--configuration-file=build/name", "--command=make {configuration}")
+        (entry,) = self.entries(f"{BUILD}/make/tinyconfig.json")
+        self.assertEqual(entry["command"], "make tinyconfig")
+
+    def test_no_record_of_a_command_the_list_names_no_record_for(self) -> None:
+        self.without = ("--output",)
+        why = "commands.json names {} for 'make {}'; pass --output"
+        for target in ("foo", "tiny/config", "tinyconfig all"):
+            said = self.make(f"--command=make {target}")
+            self.assert_no_record(said, why.format("no record", target))
+        twice = [{"argv": "make *", "record": "*.json"}] * 2
+        listed: Json = {"env": {}, "commands": twice}
+        with mock.patch.object(record, "known", return_value=listed):
+            said = self.make("--command=make foo")
+        self.assert_no_record(said, why.format("more than one record", "foo"))
+
+    def test_an_output_given_is_the_record_of_any_command(self) -> None:
+        self.make("--command=make foo", "--tool=make", "--tool=gcc")
+        (entry,) = self.entries()
+        self.assertEqual(entry["command"], "make foo")
+        tools = [tool("make", "4.4.1"), tool("gcc", "14.2.0")]
+        self.assertEqual(entry["tools"], tools)
+
+    def test_a_tool_given_follows_the_first(self) -> None:
+        self.without = ("--config", "--configuration")
+        self.make("--tool=gcc", "--tool=make", "--tool=clang", "--tool=gcc")
+        (entry,) = self.read("linux/v1.2/make/all.json")["entries"]
+        tools = [tool("make", "4.4.1"), tool("gcc", "14.2.0"), tool("clang", "19.1.7")]
+        self.assertEqual(entry["tools"], tools)
+
+    def test_the_variables_of_the_first_tool_and_those_given(self) -> None:
+        self.without = ("--env",)
+        set_ = {"LLVM": "1", "KCFLAGS": "-O1", "EXAMPLE": "y", "ARCH": ""}
+        self.make(**set_)
+        self.without = ()
+        self.make("--env=EXAMPLE", "--env=LLVM", **set_)
+        first, second = self.entries()
+        listed = {"LLVM": "1", "KCFLAGS": "-O1"}
+        self.assertEqual(list(first["env"].items()), list(listed.items()))
+        self.assertEqual(second["env"], first["env"] | {"EXAMPLE": "y"})
+        self.assertEqual(list(second["env"])[-1], "EXAMPLE")
+
+    def test_no_variables_of_a_tool_the_list_has_none_for(self) -> None:
+        options = ("--output=checkpatch.pl.json", "--command=scripts/checkpatch.pl")
+        self.file(options=options, LLVM="1")
+        (entry,) = self.entries(CHECKPATCH)
+        self.assertEqual(entry["tools"], [tool("checkpatch.pl", "0.32")])
+        self.assertEqual(entry["env"], {"KCFLAGS": "-Wextra"})
+
     def test_no_configuration_leaves_the_text_as_it_is(self) -> None:
         names = ("--output={configuration}.json", "--command=make {configuration}")
         self.file(options=(*names, "--tool=make"))

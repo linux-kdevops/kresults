@@ -1,8 +1,12 @@
 {
   "schema": 1,
+  "env": {
+    "make": ["ARCH", "LLVM", "CROSS_COMPILE", "KCFLAGS", "KBUILD_EXTRA_WARN"]
+  },
   "commands": [
     {
       "command": "make TARGET, to configure",
+      "argv": "make *config",
       "record": "make/*config.json",
       "under": "build"
     },
@@ -13,6 +17,7 @@
     },
     {
       "command": "make",
+      "argv": "make",
       "record": "make/all.json",
       "under": "build"
     },

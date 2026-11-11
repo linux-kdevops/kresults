@@ -518,9 +518,15 @@ class Validate(unittest.TestCase):
     def test_commands(self) -> None:
         listed: Json = json.loads((validate.HERE / "commands.json").read_text("utf-8"))
         self.assertTrue(listed["commands"])
+        self.assertEqual(set(listed), {"schema", "env", "commands"})
+        for names in listed["env"].values():
+            self.assertTrue(all(isinstance(name, str) for name in names))
         for command in listed["commands"]:
             with self.subTest(command=command):
-                self.assertEqual(set(command), {"command", "record", "under"})
+                self.assertEqual(
+                    set(command) - {"argv"}, {"command", "record", "under"}
+                )
+                self.assertIsInstance(command.get("argv", ""), str)
                 self.assertIsInstance(command["command"], str)
                 self.assertIn(command["under"], ("build", "commit", "series"))
                 self.assertIsInstance(command["record"], str)

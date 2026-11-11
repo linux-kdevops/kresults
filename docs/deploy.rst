@@ -39,11 +39,9 @@ the command as a transient `systemd`_ user unit, in the tree, and name
    $ systemd-run --user --wait --collect --verbose --setenv=PATH \
        --working-directory="$PWD" \
        --property=StateDirectory=krecords \
-       --property=ExecStopPost='-env krecord
-           --output make/all.json --command make
+       --property=ExecStopPost='-env krecord --command make
            --config build/.config --configuration tinyconfig
-           --priority warning --tool make --env ARCH --env LLVM
-           --producer by-hand --producer-version 1' \
+           --priority warning --producer by-hand --producer-version 1' \
        systemd-cat --stderr-priority=warning make O=build
 
 systemd runs ``krecord`` when the command exits, pass or fail, with its
@@ -55,10 +53,14 @@ journal, what the run took from the unit's cgroup, and the commit, the
 progress and the record does not.
 
 Records go to ``~/.local/state/krecords`` unless ``--records`` names
-another tree, and the run is ``manual`` unless ``--run`` names it.
-``krecord`` adds the compiler the ``.config`` names to the tools. A
-producer whose settings are a file, as a drop-in is, names its version by
-``--producer-tree``, a directory whose Git tree describes the producer.
+another tree, and the run is ``manual`` unless ``--run`` names it. The
+record's name comes from the line of :src:`format/commands.json` whose
+``argv`` the command matches, and ``--output`` names one no line matches.
+The tools are the command's own, the compiler the ``.config`` names, and
+any ``--tool``. The variables recorded are those the list names for the
+command's tool, and any ``--env``. A producer whose settings are a file,
+as a drop-in is, names its version by ``--producer-tree``, a directory
+whose Git tree describes the producer.
 ``--configuration-file`` names a file another command left in the build,
 and ``{configuration}`` in ``--output`` and ``--command`` stands for what
 it holds.

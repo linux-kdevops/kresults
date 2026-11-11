@@ -23,7 +23,7 @@ from typing import Any, NotRequired, TypedDict, cast
 
 from jsonschema import Draft7Validator, ValidationError, validators
 from jsonschema.protocols import Validator
-from record import ARCHES, COMPILERS, run_of
+from record import ARCHES, COMPILERS, known, run_of
 
 # The fields the checks read, which a file has once its schema passes it.
 
@@ -123,7 +123,7 @@ def names_of(record: str) -> re.Pattern[str]:
     return re.compile(path.replace(r"\*", "[^/]+"))
 
 
-COMMANDS: list[Command] = json.loads((HERE / "commands.json").read_bytes())["commands"]
+COMMANDS: list[Command] = known()["commands"]
 RECORDS = [(names_of(command["record"]), command) for command in COMMANDS]
 # What a record lies under, by the name commands.json gives it in "under".
 UNDER = {"build": "a build", "commit": "the commit", "series": "a series"}

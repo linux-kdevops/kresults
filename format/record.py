@@ -16,6 +16,7 @@ a failing ExecStopPost= would change the unit's result.
 """
 
 import argparse
+import functools
 import hashlib
 import json
 import os
@@ -175,6 +176,41 @@ def named(text: str, configuration: str | None) -> str:
     return text.replace("{configuration}", configuration) if configuration else text
 
 
+@functools.cache
+def known() -> Json:
+    """Return commands.json, which lies beside this file whatever links to it."""
+    return json.loads(Path(__file__).resolve().with_name("commands.json").read_bytes())
+
+
+def record_of(command: str) -> str:
+    """Return the name of a command's record: that of the one argv it matches."""
+    names = [
+        entry["record"].replace("*", "".join(found.groups()))
+        for entry in known()["commands"]
+        # An argv's * is the text its record's * stands for: part of one name.
+        if (argv := re.escape(entry.get("argv", "")).replace(r"\*", "([^ /]+)"))
+        and (found := re.fullmatch(argv, command))
+    ]
+    count = "more than one record" if names else "no record"
+    need(len(names) == 1, f"commands.json names {count} for {command!r}; pass --output")
+    return names[0]
+
+
+def ran(command: str, tools: Sequence[str], variables: Sequence[str]) -> Json:
+    """Return what an entry says ran: the tools, the command and its environment.
+
+    The command's first word is the first tool, and commands.json lists the
+    variables of its environment; the tools and variables given follow them.
+    """
+    # A tool in the tree is named without its directory (README.md, "Tools").
+    first = Path(command.partition(" ")[0]).name
+    need(first, "the command is empty")
+    names = dict.fromkeys([*known()["env"].get(first, []), *variables])
+    env = {name: os.environ[name] for name in names if os.environ.get(name)}
+    used = list(map(tool, dict.fromkeys([first, *tools])))
+    return {"tools": used, "command": command, "env": env}
+
+
 def find(pattern: str, text: str) -> str:
     """Return the first group of a pattern's first match in a text, or nothing."""
     found = re.search(pattern, text, re.MULTILINE)
@@ -326,11 +362,7 @@ def file_run(args: argparse.Namespace) -> None:
     name = run("git", "describe", *describe)
     directory = build = args.records / args.project / name
     subject: Json = {"project": args.project, "commit": commit}
-    env = {
-        variable: environ[variable] for variable in args.env if environ.get(variable)
-    }
-    entry: Json = {"tools": list(map(tool, args.tool))}
-    entry |= {"command": named(args.command, configuration), "env": env}
+    entry = ran(named(args.command, configuration), args.tool, args.env)
     settings = config.read_bytes() if config else b""
     if config:
         text = settings.decode(errors="replace")
@@ -342,7 +374,8 @@ def file_run(args: argparse.Namespace) -> None:
         names = {"configuration": [configuration], "arch": arch}
         subject["build"] = {**names, "compiler": compiler}
         # The .config says which compiler built: no producer names it too.
-        entry["tools"] += [] if compiler in args.tool else [tool(compiler)]
+        named_too = any(one["name"] == compiler for one in entry["tools"])
+        entry["tools"] += [] if named_too else [tool(compiler)]
         entry["config"] = "sha256:" + hashlib.sha256(settings).hexdigest()
         build = directory / str(configuration) / arch / compiler
     status = int(environ.get("EXIT_STATUS", "0"))
@@ -353,7 +386,9 @@ def file_run(args: argparse.Namespace) -> None:
         home = re.escape(str(Path.home())) + r"(?![\w.-])"
         entry["output"] = re.sub(home, "~", output) + "\n"
     entry["invocations"] = [invocation(args, lab, started)]
-    filed = build / named(args.output, configuration)
+    # Without a name given, commands.json names the record of the command.
+    given = named(args.output or "", configuration)
+    filed = build / (given or record_of(entry["command"]))
     write(filed, merged(filed, subject, entry))
     if config:
         write(build / "config", settings)
@@ -371,8 +406,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     summary = (__doc__ or "").partition("\n")[0]
     parser = argparse.ArgumentParser(description=summary, allow_abbrev=False)
     parser.add_argument("--records", type=Path, default=state(), metavar="DIR")
-    for option in ("output", "command", "producer"):
+    for option in ("command", "producer"):
         parser.add_argument(f"--{option}", required=True)
+    parser.add_argument("--output", metavar="NAME")
     version = parser.add_mutually_exclusive_group(required=True)
     version.add_argument("--producer-version", metavar="VERSION")
     version.add_argument("--producer-tree", type=Path, metavar="DIR")
@@ -382,8 +418,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     name = parser.add_mutually_exclusive_group()
     name.add_argument("--configuration", metavar="NAME")
     name.add_argument("--configuration-file", type=Path, metavar="FILE")
-    # An entry names at least the tool its command runs first.
-    parser.add_argument("--tool", action="append", required=True, metavar="NAME")
+    parser.add_argument("--tool", action="append", default=[], metavar="NAME")
     parser.add_argument("--env", action="append", default=[], metavar="VAR")
     parser.add_argument("--priority", choices=PRIORITIES, metavar="LEVEL")
     args = parser.parse_args(argv)

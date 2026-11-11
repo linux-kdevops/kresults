@@ -119,8 +119,8 @@ repeats the run.
 
 `env` lists at least these, each when set and not empty:
 
-- make in a kernel tree: `ARCH`, `LLVM`, `CROSS_COMPILE`, `KCFLAGS` and
-  `KBUILD_EXTRA_WARN`;
+- the variables [commands.json] lists under `env` for the command's
+  tool, as `ARCH` and `LLVM` for make in a kernel tree;
 - fstests: each variable of the section that `check -s` runs, as its
   configuration file sets it.
 
@@ -306,6 +306,11 @@ series. In a record's name, `*` stands for
 one name, or part of one, and `**` for a path. `validate` refuses a record
 the list lacks, so a command gets its line there before a producer files
 its record.
+
+A line may also give `argv`, the command as a record holds it, with `*`
+standing for the same text as in the record's name: `make tinyconfig`
+matches `make *config` and is filed as `make/tinyconfig.json`. `krecord`
+names a record by it.
 
 A command lies under a build when it reads the `.config` or what the
 build made, and under the commit when it reads neither. kbuild's
