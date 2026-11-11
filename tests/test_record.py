@@ -486,7 +486,7 @@ class RecordTest(unittest.TestCase):
             said = self.make(f"--command=make {target}")
             self.assert_no_record(said, why.format("no record", target))
         twice = [{"argv": "make *", "record": "*.json"}] * 2
-        listed: Json = {"env": {}, "commands": twice}
+        listed: Json = {"projects": {"linux": {"env": {}, "commands": twice}}}
         with mock.patch.object(record, "known", return_value=listed):
             said = self.make("--command=make foo")
         self.assert_no_record(said, why.format("more than one record", "foo"))
@@ -497,6 +497,34 @@ class RecordTest(unittest.TestCase):
         self.assertEqual(entry["command"], "make foo")
         tools = [tool("make", "4.4.1"), tool("gcc", "14.2.0")]
         self.assertEqual(entry["tools"], tools)
+
+    def test_a_project_whose_records_lie_under_the_commit(self) -> None:
+        self.without = ("--env",)
+        # The tree's own configure, which is on no PATH and is not run.
+        (self.tree / "configure").write_text("#!/bin/sh\nexit 1\n")
+        command = "--command=configure --target-list=x86_64-softmmu"
+        said = self.file(options=("--project=qemu", command), CC="clang", LLVM="1")
+        configure = "qemu/v1.2/configure.json"
+        self.assertIn(f"record: {self.records / configure}\n", said)
+        self.file(options=("--project=qemu", "--command=make"), LLVM="1")
+        (entry,) = self.entries(configure)
+        tools = [{"name": "configure", "version": "", "build": "tree"}]
+        self.assertEqual(entry["tools"], tools)
+        self.assertEqual(entry["env"], {"CC": "clang"})
+        subject = {"project": "qemu", "commit": self.commit}
+        self.assertEqual(self.read(configure)["subject"], subject)
+        (entry,) = self.entries("qemu/v1.2/make/all.json")
+        self.assertEqual(entry["env"], {})
+        # The kernel's make reads a build, and its record under the commit
+        # is refused.
+        self.file(options=("--command=make",))
+        problem = "lies under the commit, and commands.json has it under a build"
+        problems = [("linux/v1.2/make/all.json", problem)]
+        self.assertEqual(list(validate.check(self.records)), problems)
+
+    def test_no_record_of_a_project_the_list_lacks(self) -> None:
+        said = self.make("--project=xen")
+        self.assert_no_record(said, "commands.json lists no project 'xen'")
 
     def test_a_tool_given_follows_the_first(self) -> None:
         self.without = ("--config", "--configuration")

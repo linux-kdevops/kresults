@@ -1,115 +1,138 @@
 {
   "schema": 1,
-  "env": {
-    "make": ["ARCH", "LLVM", "CROSS_COMPILE", "KCFLAGS", "KBUILD_EXTRA_WARN"]
-  },
-  "commands": [
-    {
-      "command": "make TARGET, to configure",
-      "argv": "make *config",
-      "record": "make/*config.json",
-      "under": "build"
+  "projects": {
+    "linux": {
+      "env": {
+        "make": ["ARCH", "LLVM", "CROSS_COMPILE", "KCFLAGS", "KBUILD_EXTRA_WARN"]
+      },
+      "commands": [
+        {
+          "command": "make TARGET, to configure",
+          "argv": "make *config",
+          "record": "make/*config.json",
+          "under": "build"
+        },
+        {
+          "command": "scripts/kconfig/merge_config.sh",
+          "record": "merge_config.sh.json",
+          "under": "build"
+        },
+        {
+          "command": "make",
+          "argv": "make",
+          "record": "make/all.json",
+          "under": "build"
+        },
+        {
+          "command": "make dir-pkg",
+          "record": "make/dir-pkg.json",
+          "under": "build"
+        },
+        {
+          "command": "make checkstack",
+          "record": "make/checkstack.json",
+          "under": "build"
+        },
+        {
+          "command": "make rusttest",
+          "record": "make/rusttest.json",
+          "under": "build"
+        },
+        {
+          "command": "make W=1e OBJ, compiled by clang",
+          "record": "clang/**.json",
+          "under": "build"
+        },
+        {
+          "command": "make W=1e OBJ, compiled by gcc",
+          "record": "gcc/**.json",
+          "under": "build"
+        },
+        {
+          "command": "make C=2 OBJ",
+          "record": "sparse/**.json",
+          "under": "build"
+        },
+        {
+          "command": "make C=2 CHECK=smatch OBJ",
+          "record": "smatch/**.json",
+          "under": "build"
+        },
+        {
+          "command": "make C=2 CHECK=scripts/coccicheck OBJ",
+          "record": "coccicheck/**.json",
+          "under": "build"
+        },
+        {
+          "command": "clang-tidy FILE",
+          "record": "clang-tidy/**.json",
+          "under": "build"
+        },
+        {
+          "command": "check -s SECTION TEST",
+          "record": "fstests/*/**.json",
+          "under": "build"
+        },
+        {
+          "command": "scripts/checkpatch.pl --git RANGE",
+          "record": "checkpatch.pl.json",
+          "under": "commit"
+        },
+        {
+          "command": "scripts/get_maintainer.pl PATCH",
+          "record": "get_maintainer.pl.json",
+          "under": "commit"
+        },
+        {
+          "command": "scripts/kernel-doc FILE",
+          "record": "kernel-doc/**.json",
+          "under": "commit"
+        },
+        {
+          "command": "scripts/checkincludes.pl FILE",
+          "record": "checkincludes.pl/**.json",
+          "under": "commit"
+        },
+        {
+          "command": "make SPHINXDIRS=DIR htmldocs",
+          "record": "make/htmldocs/*.json",
+          "under": "commit"
+        },
+        {
+          "command": "make rustfmtcheck",
+          "record": "make/rustfmtcheck.json",
+          "under": "commit"
+        },
+        {
+          "command": "b4 mbox",
+          "record": "b4/mbox.json",
+          "under": "series"
+        },
+        {
+          "command": "b4 shazam",
+          "record": "b4/shazam.json",
+          "under": "series"
+        }
+      ]
     },
-    {
-      "command": "scripts/kconfig/merge_config.sh",
-      "record": "merge_config.sh.json",
-      "under": "build"
-    },
-    {
-      "command": "make",
-      "argv": "make",
-      "record": "make/all.json",
-      "under": "build"
-    },
-    {
-      "command": "make dir-pkg",
-      "record": "make/dir-pkg.json",
-      "under": "build"
-    },
-    {
-      "command": "make checkstack",
-      "record": "make/checkstack.json",
-      "under": "build"
-    },
-    {
-      "command": "make rusttest",
-      "record": "make/rusttest.json",
-      "under": "build"
-    },
-    {
-      "command": "make W=1e OBJ, compiled by clang",
-      "record": "clang/**.json",
-      "under": "build"
-    },
-    {
-      "command": "make W=1e OBJ, compiled by gcc",
-      "record": "gcc/**.json",
-      "under": "build"
-    },
-    {
-      "command": "make C=2 OBJ",
-      "record": "sparse/**.json",
-      "under": "build"
-    },
-    {
-      "command": "make C=2 CHECK=smatch OBJ",
-      "record": "smatch/**.json",
-      "under": "build"
-    },
-    {
-      "command": "make C=2 CHECK=scripts/coccicheck OBJ",
-      "record": "coccicheck/**.json",
-      "under": "build"
-    },
-    {
-      "command": "clang-tidy FILE",
-      "record": "clang-tidy/**.json",
-      "under": "build"
-    },
-    {
-      "command": "check -s SECTION TEST",
-      "record": "fstests/*/**.json",
-      "under": "build"
-    },
-    {
-      "command": "scripts/checkpatch.pl --git RANGE",
-      "record": "checkpatch.pl.json",
-      "under": "commit"
-    },
-    {
-      "command": "scripts/get_maintainer.pl PATCH",
-      "record": "get_maintainer.pl.json",
-      "under": "commit"
-    },
-    {
-      "command": "scripts/kernel-doc FILE",
-      "record": "kernel-doc/**.json",
-      "under": "commit"
-    },
-    {
-      "command": "scripts/checkincludes.pl FILE",
-      "record": "checkincludes.pl/**.json",
-      "under": "commit"
-    },
-    {
-      "command": "make SPHINXDIRS=DIR htmldocs",
-      "record": "make/htmldocs/*.json",
-      "under": "commit"
-    },
-    {
-      "command": "make rustfmtcheck",
-      "record": "make/rustfmtcheck.json",
-      "under": "commit"
-    },
-    {
-      "command": "b4 mbox",
-      "record": "b4/mbox.json",
-      "under": "series"
-    },
-    {
-      "command": "b4 shazam",
-      "record": "b4/shazam.json",
-      "under": "series"
+    "qemu": {
+      "env": {
+        "configure": ["CC", "CXX", "CFLAGS", "CXXFLAGS", "LDFLAGS"]
+      },
+      "commands": [
+        {
+          "command": "configure --target-list=LIST",
+          "argv": "configure --target-list=*",
+          "record": "configure.json",
+          "under": "commit"
+        },
+        {
+          "command": "make",
+          "argv": "make",
+          "record": "make/all.json",
+          "under": "commit"
+        }
+      ]
     }
-  ]
+  }
 }

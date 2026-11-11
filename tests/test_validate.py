@@ -48,6 +48,7 @@ CLANG = {"ARCH": "x86_64", "LLVM": "1"}
 GCC = {"ARCH": "x86_64"}
 SAME_RUN = [(SPARSE, "entry 2 is the run of entry 1; add to its invocations")]
 UNKNOWN = "is of no known command; add its line to commands.json"
+NO_PROJECT = "is of no known project; add its commands to commands.json"
 OTHER_BUILD = "entry 1 sets an ARCH or LLVM its build does not name"
 
 
@@ -517,20 +518,24 @@ class Validate(unittest.TestCase):
 
     def test_commands(self) -> None:
         listed: Json = json.loads((validate.HERE / "commands.json").read_text("utf-8"))
-        self.assertTrue(listed["commands"])
-        self.assertEqual(set(listed), {"schema", "env", "commands"})
-        for names in listed["env"].values():
-            self.assertTrue(all(isinstance(name, str) for name in names))
-        for command in listed["commands"]:
-            with self.subTest(command=command):
-                self.assertEqual(
-                    set(command) - {"argv"}, {"command", "record", "under"}
-                )
-                self.assertIsInstance(command.get("argv", ""), str)
-                self.assertIsInstance(command["command"], str)
-                self.assertIn(command["under"], ("build", "commit", "series"))
-                self.assertIsInstance(command["record"], str)
-                self.assertRegex(command["record"], r"\A[^/]+(/[^/]+)*\.json\Z")
+        self.assertEqual(set(listed), {"schema", "projects"})
+        self.assertTrue(listed["projects"])
+        for project, of in listed["projects"].items():
+            self.assertEqual(set(of), {"env", "commands"})
+            self.assertTrue(of["commands"])
+            for names in of["env"].values():
+                self.assertTrue(all(isinstance(name, str) for name in names))
+            for command in of["commands"]:
+                with self.subTest(project=project, command=command):
+                    self.check_command(command)
+
+    def check_command(self, command: Json) -> None:
+        self.assertEqual(set(command) - {"argv"}, {"command", "record", "under"})
+        self.assertIsInstance(command.get("argv", ""), str)
+        self.assertIsInstance(command["command"], str)
+        self.assertIn(command["under"], ("build", "commit", "series"))
+        self.assertIsInstance(command["record"], str)
+        self.assertRegex(command["record"], r"\A[^/]+(/[^/]+)*\.json\Z")
 
     def test_unknown_command(self) -> None:
         for path, to in (
@@ -542,6 +547,27 @@ class Validate(unittest.TestCase):
         ):
             with self.subTest(to=to):
                 self.assertEqual(problems(moved(path, to)), [(to, UNKNOWN)])
+
+    def test_project_without_builds(self) -> None:
+        files = good()
+        commit = {"project": "qemu", "commit": TIP}
+        configure = entry("configure --target-list=x86_64-softmmu", {"CC": "clang"})
+        files[f"qemu/{TIP}/series.json"] = series(TIP, "", TIP)
+        files[f"qemu/{TIP}/configure.json"] = record(commit, configure)
+        # An ARCH names no build where there is none.
+        files[f"qemu/{TIP}/make/all.json"] = record(commit, entry("make", GCC))
+        self.assertEqual(problems(files), [])
+        # Each project has its own commands.
+        path = f"qemu/{TIP}/checkpatch.pl.json"
+        files[path] = record(commit, entry("scripts/checkpatch.pl"))
+        self.assertEqual(problems(files), [(path, UNKNOWN)])
+
+    def test_unknown_project(self) -> None:
+        files = good()
+        path = f"xen/{TIP}/make/all.json"
+        files[f"xen/{TIP}/series.json"] = series(TIP, "", TIP)
+        files[path] = record({"project": "xen", "commit": TIP}, entry("make"))
+        self.assertEqual(problems(files), [(path, NO_PROJECT)])
 
     def test_command_named_in_part(self) -> None:
         path = f"{COMMIT}/{TINY}/make/tinyconfig.json"

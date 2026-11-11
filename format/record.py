@@ -182,11 +182,18 @@ def known() -> Json:
     return json.loads(Path(__file__).resolve().with_name("commands.json").read_bytes())
 
 
-def record_of(command: str) -> str:
+def listed(project: str) -> Json:
+    """Return what commands.json lists for a project: its commands and their env."""
+    projects = known()["projects"]
+    need(project in projects, f"commands.json lists no project {project!r}")
+    return projects[project]
+
+
+def record_of(command: str, project: str) -> str:
     """Return the name of a command's record: that of the one argv it matches."""
     names = [
         entry["record"].replace("*", "".join(found.groups()))
-        for entry in known()["commands"]
+        for entry in listed(project)["commands"]
         # An argv's * is the text its record's * stands for: part of one name.
         if (argv := re.escape(entry.get("argv", "")).replace(r"\*", "([^ /]+)"))
         and (found := re.fullmatch(argv, command))
@@ -196,18 +203,25 @@ def record_of(command: str) -> str:
     return names[0]
 
 
-def ran(command: str, tools: Sequence[str], variables: Sequence[str]) -> Json:
+def ran(args: argparse.Namespace, command: str, top: str) -> Json:
     """Return what an entry says ran: the tools, the command and its environment.
 
     The command's first word is the first tool, and commands.json lists the
     variables of its environment; the tools and variables given follow them.
     """
     # A tool in the tree is named without its directory (README.md, "Tools").
-    first = Path(command.partition(" ")[0]).name
+    word = command.partition(" ")[0]
+    first = Path(word).name
     need(first, "the command is empty")
-    names = dict.fromkeys([*known()["env"].get(first, []), *variables])
+    names = dict.fromkeys([*listed(args.project)["env"].get(first, []), *args.env])
     env = {name: os.environ[name] for name in names if os.environ.get(name)}
-    used = list(map(tool, dict.fromkeys([first, *tools])))
+    # A tool of the tree is not run for its version: QEMU's configure empties
+    # its build directory before it reads an option.
+    own = first if not word.startswith("/") and Path(top, word).is_file() else ""
+    used = [
+        {"name": name, "version": "", "build": "tree"} if name == own else tool(name)
+        for name in dict.fromkeys([first, *args.tool])
+    ]
     return {"tools": used, "command": command, "env": env}
 
 
@@ -362,7 +376,7 @@ def file_run(args: argparse.Namespace) -> None:
     name = run("git", "describe", *describe)
     directory = build = args.records / args.project / name
     subject: Json = {"project": args.project, "commit": commit}
-    entry = ran(named(args.command, configuration), args.tool, args.env)
+    entry = ran(args, named(args.command, configuration), top)
     settings = config.read_bytes() if config else b""
     if config:
         text = settings.decode(errors="replace")
@@ -388,7 +402,7 @@ def file_run(args: argparse.Namespace) -> None:
     entry["invocations"] = [invocation(args, lab, started)]
     # Without a name given, commands.json names the record of the command.
     given = named(args.output or "", configuration)
-    filed = build / (given or record_of(entry["command"]))
+    filed = build / (given or record_of(entry["command"], args.project))
     write(filed, merged(filed, subject, entry))
     if config:
         write(build / "config", settings)

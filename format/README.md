@@ -119,8 +119,8 @@ repeats the run.
 
 `env` lists at least these, each when set and not empty:
 
-- the variables [commands.json] lists under `env` for the command's
-  tool, as `ARCH` and `LLVM` for make in a kernel tree;
+- the variables [commands.json] lists under the project's `env` for the
+  command's tool, as `ARCH` and `LLVM` for make in a kernel tree;
 - fstests: each variable of the section that `check -s` runs, as its
   configuration file sets it.
 
@@ -246,6 +246,11 @@ linux/                                   the project
         ├── mbox.json                    b4 mbox --single-message
         ├── mbox.mbx                     the message it saved
         └── shazam.json                  b4 shazam
+qemu/                                    another project
+└── v11.1.0-12-g0123456789ab/            a commit
+    ├── series.json
+    ├── configure.json                   configure --target-list=LIST
+    └── make/all.json                    make, the build
 ```
 
 - A commit is named as `git describe --tags --match 'v[0-9]*'
@@ -276,6 +281,9 @@ linux/                                   the project
   entries has that build's `config`. A record of a tool that reads no
   build lies directly under the commit, and its entries have none:
   `checkpatch.pl` reads the commits alone, so one run serves every build.
+- A QEMU commit has no build level: its records lie directly under the
+  commit, and configure run with another `--target-list` is another
+  entry of `configure.json`.
 - Under a commit, a build or a series, a record is named for the tool
   that was run, as the tool names itself, then for what it was run on:
   - a make target under `make/`, `make/htmldocs/filesystems.json` for
@@ -300,12 +308,14 @@ linux/                                   the project
 
 ## Known commands
 
-[commands.json] lists each command a producer runs, with the name of
-its record and whether the record lies under a build, the commit or a
-series. In a record's name, `*` stands for
-one name, or part of one, and `**` for a path. `validate` refuses a record
-the list lacks, so a command gets its line there before a producer files
-its record.
+[commands.json] lists, under `projects`, each project by the name of its
+directory. A project has `env`, the variables to record for each tool,
+and `commands`: each command a producer runs in its tree, with the name
+of its record and whether the record lies under a build, the commit or a
+series. In a record's name, `*` stands for one name, or part of one, and
+`**` for a path. `validate` holds a record to the commands of the project
+it lies under and refuses one the list lacks, so a project and a command
+get their lines there before a producer files a record.
 
 A line may also give `argv`, the command as a record holds it, with `*`
 standing for the same text as in the record's name: `make tinyconfig`
@@ -316,7 +326,8 @@ A command lies under a build when it reads the `.config` or what the
 build made, and under the commit when it reads neither. kbuild's
 `no-dot-config-targets` names the make targets that read no `.config`.
 `checkstack` is one of them and still lies under a build, since it reads
-`vmlinux`.
+`vmlinux`. The same command may lie elsewhere in another project: make
+lies under a build in `linux` and under the commit in `qemu`.
 
 ## A commit and its series
 

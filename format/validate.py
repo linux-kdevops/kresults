@@ -123,8 +123,12 @@ def names_of(record: str) -> re.Pattern[str]:
     return re.compile(path.replace(r"\*", "[^/]+"))
 
 
-COMMANDS: list[Command] = known()["commands"]
-RECORDS = [(names_of(command["record"]), command) for command in COMMANDS]
+PROJECTS: dict[str, dict[str, list[Command]]] = known()["projects"]
+# Each project's commands, with what matches the name of its record.
+RECORDS = {
+    project: [(names_of(command["record"]), command) for command in of["commands"]]
+    for project, of in PROJECTS.items()
+}
 # What a record lies under, by the name commands.json gives it in "under".
 UNDER = {"build": "a build", "commit": "the commit", "series": "a series"}
 
@@ -206,7 +210,8 @@ def is_record(file: Path, place: Place) -> bool:
 def command_of(place: Place, level: str) -> Command | None:
     """Return the command whose record, under a level, has the name of a file."""
     path = "/".join(place.below)
-    found = (c for names, c in RECORDS if c["under"] == level and names.fullmatch(path))
+    records = RECORDS.get(place.project, [])
+    found = (c for names, c in records if c["under"] == level and names.fullmatch(path))
     return next(found, None)
 
 
@@ -260,7 +265,9 @@ def check_tree(place: Place, subject: TreeSubject) -> Iterator[str]:
 def check_name(place: Place) -> Iterator[str]:
     """Yield the problem of a record that commands.json lists elsewhere or nowhere."""
     levels = [level for level in UNDER if command_of(place, level)]
-    if not levels:
+    if place.project not in RECORDS:
+        yield "is of no known project; add its commands to commands.json"
+    elif not levels:
         yield "is of no known command; add its line to commands.json"
     elif place.level not in levels:
         here, there = UNDER[place.level], UNDER[levels[0]]
