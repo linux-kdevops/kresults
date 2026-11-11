@@ -82,20 +82,30 @@ CUT = 50
 CONTEXT = 3
 # A tree that holds a project's recorded commits, by the project's name,
 # which a path:LINE in a record links to.
-CODE = {"linux": "https://github.com/linux-kdevops/linux"}
-# The tree a base without base_trees is on, by its name: a release or
-# release candidate on torvalds', a stable release on stable, a linux-next
-# tag on linux-next; any other name on CODE.
+CODE = {
+    "linux": "https://github.com/linux-kdevops/linux",
+    "qemu": "https://gitlab.com/qemu-project/qemu",
+}
+# A project's name in the controls bar; any other shows as its directory.
+PROJECTS = {"linux": "Linux kernel", "qemu": "QEMU"}
+# The project whose listings are the site's root pages, when it has rows;
+# without it the first by name is.
+DEFAULT = "linux"
+# The tree a base without base_trees is on, by its project and name: of
+# linux a release or release candidate on torvalds', a stable release on
+# stable, a linux-next tag on linux-next; any other name on CODE.
 KERNEL_ORG = "https://git.kernel.org/pub/scm/linux/kernel/git/"
-TAG_TREES = (
-    (
-        re.compile(r"v\d+\.\d+(?:-rc\d+)?"),
-        "torvalds",
-        f"{KERNEL_ORG}torvalds/linux.git",
-    ),
-    (re.compile(r"v\d+\.\d+\.\d+"), "stable", f"{KERNEL_ORG}stable/linux.git"),
-    (re.compile(r"next-\d{8}"), "linux-next", f"{KERNEL_ORG}next/linux-next.git"),
-)
+TAG_TREES = {
+    "linux": (
+        (
+            re.compile(r"v\d+\.\d+(?:-rc\d+)?"),
+            "torvalds",
+            f"{KERNEL_ORG}torvalds/linux.git",
+        ),
+        (re.compile(r"v\d+\.\d+\.\d+"), "stable", f"{KERNEL_ORG}stable/linux.git"),
+        (re.compile(r"next-\d{8}"), "linux-next", f"{KERNEL_ORG}next/linux-next.git"),
+    )
+}
 # A file of the tree and a line of it as a tool prints them: the path from
 # the tree, or from "../" under a build directory in it, then :LINE.
 CITED = re.compile(r"(?<![\w/.-])(?:\.\.?/)?((?:[\w.+-]+/)*[\w+-][\w.+-]*\.\w+):(\d+)")
@@ -109,6 +119,8 @@ DIRTY = "-dirty"
 NO_BUILD_DIR = "-"
 # What that page is called where a build is named.
 NO_BUILD = "no build"
+# The targets a configure of a tree with no build level was given.
+TARGET_LIST = re.compile(r"configure\b.* --target-list=(\S+)")
 # What an anchor of a record's key keeps; anything else becomes "-".
 ANCHOR = re.compile(r"[^A-Za-z0-9._-]")
 # The C0 controls but tab and newline, and DEL, as their Unicode control
@@ -125,7 +137,8 @@ COLOURS = {"31": "fail", "32": "pass", "33": "warn", "90": "none"}
 # Codes that pick a colour by number: the parameters after them are its number.
 EXTENDED = frozenset({"38", "48", "58"})
 # The site's own files at its root, which a project must not be named, nor
-# index-N.html (PAGED).
+# index-N.html (PAGED), nor either after another project's name and "-", as
+# that project's listings are.
 RESERVED = frozenset(
     {
         "index.html",
@@ -314,11 +327,13 @@ footer { color: var(--text-muted); font-size: .85em;
   border-top: 1px solid var(--border-light); padding-top: 8px; }
 table.fixed { table-layout: fixed; min-width: 1000px; }
 table.fixed td { overflow-wrap: anywhere; }
-col.subject, col.builds { width: auto; }
+col.subject { width: auto; }
 col.author { width: 180px; } col.date { width: 110px; } col.parts { width: 50px; }
 col.base { width: 200px; } col.findings { width: 300px; }
-col.commit { width: 230px; } col.recorded { width: 140px; }
-col.producers { width: 170px; }
+/* The bases' columns are as wide as what they hold: the commit and when it was
+   recorded on one line, the builds and the producers sharing the rest. */
+table.bases { min-width: 800px; }
+table.bases td:not(:nth-child(2), :last-child) { white-space: nowrap; }
 .versions { margin-top: 2px; }
 .lineage-badge { display: inline-block; margin-right: 6px; padding: 0 7px;
   border-radius: 10px; border: 1px solid var(--lineage-border);
@@ -420,8 +435,15 @@ try {
 } catch {
   // No storage: the system's theme.
 }
-// The controls bar's list submits its search at once, as sashiko's does.
+// The controls bar's project opens the page chosen, the same view of that
+// project, and leaves this page's own selected for when it is shown again.
+// Its list submits its search at once, as sashiko's does.
 document.addEventListener("change", (event) => {
+  if (event.target.id === "project") {
+    const page = event.target.value;
+    event.target.querySelector("[selected]").selected = true;
+    location.assign(page);
+  }
   if (event.target.id === "list") event.target.form.submit();
 });
 """
@@ -497,7 +519,8 @@ for (const mark of document.querySelectorAll("svg.chart a.mark")) {
 
 # search.html's script: it hides the rows whose data-search lacks a word
 # typed, or given as ?q=, and a table none of whose rows match, and keeps ?q=
-# in the address, so a search can be linked. Without it every row shows.
+# in the address, so a search can be linked. A filter is of series alone.
+# Without it every row shows.
 SEARCH = """\
 "use strict";
 const box = document.getElementById("search");
@@ -524,13 +547,14 @@ function filter() {
     row.hidden = !found || !narrowed.every((name) => holds(row, name));
   }
   const shown = series.querySelector("tr[data-search]:not([hidden])");
-  series.hidden = (words.length > 0 || narrowed.length > 0) && !shown;
+  const sought = words.length > 0;
+  series.hidden = (sought || narrowed.length > 0) && !shown;
   const named = narrowed.filter((name) => name !== "list");
   const label = named.map((name) => `${name} ${chosen[name]}`).join(", ");
   note.textContent = `Filtered by ${label}. Clear shows every series.`;
   note.hidden = named.length === 0;
   const base = bases.querySelector("tr[data-search]:not([hidden])");
-  bases.hidden = narrowed.length > 0 || (words.length > 0 && !base);
+  bases.hidden = narrowed.length > 0 || (sought && !base);
   const address = new URL(location.href);
   address.searchParams.set("q", box.value);
   for (const name of Object.keys(FILTERS)) {
@@ -873,6 +897,19 @@ class Tree:
         """Its directories under the site, and but for NO_BUILD under the records."""
         build = (NO_BUILD_DIR,) if self.build == NO_BUILD else self.build.split("/")
         return (self.project, self.commit, *build)
+
+    @property
+    def named(self) -> str:
+        """Its build as a page names it: under no build, its configure's targets.
+
+        Those of the configure that passed last, or failing one, that ran last.
+        """
+        found = [
+            (entry.status is Status.PASSED, entry.started, match[1])
+            for entry in self.runs.get("configure", ())
+            if (match := TARGET_LIST.match(entry.command))
+        ]
+        return max(found)[2] if self.build == NO_BUILD and found else self.build
 
 
 class Applier(Enum):
@@ -2393,15 +2430,16 @@ def base_trees_of(project: str, series: Series) -> list[BaseTree]:
     """The trees to link the base in: base_trees, else one by its name."""
     if series.base_trees:
         return list(series.base_trees)
-    for pattern, remote, tree in TAG_TREES:
+    for pattern, remote, tree in TAG_TREES.get(project, ()):
         if pattern.fullmatch(series.base_name):
             return [BaseTree(remote, tree)]
     host = CODE.get(project)
-    return [BaseTree("linux-kdevops", host)] if host else []
+    # Named as who holds it there: linux-kdevops, qemu-project.
+    return [BaseTree(urlsplit(host).path.split("/")[1], host)] if host else []
 
 
 def commit_url(tree: str, sha: str) -> str | None:
-    """A commit on a tree's web page: cgit's on git.kernel.org, GitHub's."""
+    """A commit on a tree's web page: git.kernel.org's cgit, GitHub's, GitLab's."""
     if web_link(tree) is None:
         return None
     commit = quote(sha, safe="")
@@ -2410,6 +2448,8 @@ def commit_url(tree: str, sha: str) -> str | None:
             return f"{tree}/commit/?id={commit}"
         case "github.com":
             return f"{tree.removesuffix('.git')}/commit/{commit}"
+        case "gitlab.com":
+            return f"{tree.removesuffix('.git')}/-/commit/{commit}"
         case _:
             return None
 
@@ -2544,7 +2584,7 @@ def findings_line(page: Page, *, dated: bool) -> str:
         when = (
             f' <span class="text-muted-sm">{escape(stamp(tree.recorded.when))}</span>'
         )
-    return f"<div>{tree_link('', tree, tree.build)} {suite_findings(page)}{when}</div>"
+    return f"<div>{tree_link('', tree, tree.named)} {suite_findings(page)}{when}</div>"
 
 
 # The version in a subject's bracketed prefix, as [PATCH v3] or [PATCH RFC v2].
@@ -2762,7 +2802,7 @@ def series_row(
         series.base_name,
         series.base,
         *(f"{commit.subject} {commit.author}" for commit in series.commits),
-        *(page.tree.build for page in overview.builds),
+        *(page.tree.named for page in overview.builds),
     )
     strip = versions_html(marks.versions, overview.parts, "")
     row = (
@@ -2786,17 +2826,18 @@ def search_attr(*fields: str) -> str:
 def base_row(overview: Overview, *, dated: bool) -> str:
     trees = [page.tree for page in overview.builds]
     builds = ", ".join(
-        f"{tree_link('', tree, tree.build)} {failing_html(tree)}".rstrip()
+        f"{tree_link('', tree, tree.named)} {failing_html(tree)}".rstrip()
         for tree in trees
     )
     found = all_producers(trees)
     words = search_attr(
         overview.commit,
-        *(tree.build for tree in trees),
+        *(tree.named for tree in trees),
         *(producer.label for producer in found),
     )
     row = (
-        f"<tr{words}><td>{overview_link('', overview, overview.commit, main=True)}"
+        f"<tr{words}>"
+        f"<td>{overview_link('', overview, overview.commit, main=True)}"
         "</td>"
         f"<td>{builds}</td>{recorded_td(recorded_of(trees), dated=dated)}"
         f"<td>{producers_html(found)}</td></tr>"
@@ -2889,14 +2930,14 @@ def page_name(number: int) -> str:
     return "index.html" if number == 1 else f"index-{number}.html"
 
 
-def pager_html(number: int, count: int, total: int) -> str:
+def pager_html(number: int, count: int, total: int, prefix: str = "") -> str:
     """The pager sashiko shows, as links: First, Prev, where, Next, Last."""
     if count == 1:
         return ""
 
     def button(text: str, target: int) -> str:
         if 1 <= target <= count and target != number:
-            href = escape(url("", page_name(target)))
+            href = escape(url("", prefix + page_name(target)))
             return f'<a class="button" href="{href}">{text}</a>'
         return f'<span class="button disabled">{text}</span>'
 
@@ -2921,33 +2962,6 @@ class View(Enum):
     @property
     def page(self) -> str:
         return self.value[1]
-
-
-def controls_html(view: View | None, lists: Sequence[str]) -> str:
-    """The controls bar sashiko shows: lists, search, Clear, then the views."""
-    clear = url("", (view or View.SERIES).page)
-    options = "".join(
-        f'<option value="{escape(address)}" title="{escape(address)}">'
-        f"{escape(list_name(address))}</option>"
-        for address in lists
-    )
-    views = "".join(
-        f'<a class="button{" active" if other is view else ""}"'
-        f'{' aria-current="page"' if other is view else ""}'
-        f' href="{escape(url("", other.page))}">{other.label}</a>'
-        for other in View
-    )
-    return (
-        f'<form class="controls" action="{escape(url("", "search.html"))}"'
-        ' method="get" role="search">'
-        '<select id="list" name="list" class="button" aria-label="Mailing list">'
-        f'<option value="">All lists</option>{options}</select>'
-        '<input type="search" id="search" name="q" aria-label="Search"'
-        ' placeholder="Search: subject, author, list, Message-ID, base, build">'
-        '<button type="submit" class="button">Search</button>'
-        f'<a class="button" href="{escape(clear)}">Clear</a>'
-        f'<nav class="views" aria-label="Views">{views}</nav></form>'
-    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -2991,6 +3005,14 @@ class Site:
     revision: str | None = None
     # The site's public address, which a report links to, or None.
     address: str | None = None
+    # Of a project's own site (project_sites): the project its rows are of,
+    # and what each project's listings put before a root page's name.
+    project: str = ""
+    prefixes: Mapping[str, str] = dataclasses.field(default_factory=dict[str, str])
+
+    def page(self, name: str) -> str:
+        """The file of this project's page that the default project has as name."""
+        return self.prefixes.get(self.project, "") + name
 
     @property
     def members(self) -> list[tuple[tuple[str, ...], str, Cover | Unreadable | None]]:
@@ -3057,12 +3079,48 @@ class Site:
         )
 
 
-def page_link(name: str, page: str, here: str | None) -> str:
+def own_file(name: str, projects: Iterable[str]) -> bool:
+    """Whether a project named name would overwrite a page of the site's own."""
+    stems = {name, *(name.removeprefix(f"{project}-") for project in projects)}
+    return any(stem in RESERVED or PAGED.fullmatch(stem) for stem in stems)
+
+
+def prefixes_of(site: Site) -> dict[str, str]:
+    """Each project with a row, by name, and the prefix of its listings' names.
+
+    DEFAULT's, or without it the first's, are the root pages themselves.
+    """
+    found = {overview.project for overview in site.overviews}
+    names = sorted(found | {item.project for item in site.unapplied})
+    first = DEFAULT if DEFAULT in names else next(iter(names), "")
+    return {name: "" if name == first else f"{name}-" for name in names}
+
+
+def project_sites(site: Site) -> list[Site]:
+    """The site of each project's rows alone, or of none: a listing is of one.
+
+    A viewer follows one project, and a page of every project's rows has an
+    empty Series where only another project, or only bases, have rows.
+    """
+    prefixes = prefixes_of(site)
+    return [
+        dataclasses.replace(
+            site,
+            overviews=[o for o in site.overviews if o.project == name],
+            unapplied=[i for i in site.unapplied if i.project == name],
+            project=name,
+            prefixes=prefixes,
+        )
+        for name in prefixes
+    ] or [site]
+
+
+def page_link(name: str, href: str, page: str, here: str | None) -> str:
     """The status bar's link to page, and the button to its popover.
 
     The button is left out on the page itself, and when page has no popover.
     """
-    link = f'<a class="stats-link" href="{escape(url("", page))}">{name}</a>'
+    link = f'<a class="stats-link" href="{escape(url("", href))}">{name}</a>'
     target = POPOVERS.get(page)
     if target is None or page == here:
         return link
@@ -3089,10 +3147,15 @@ def status_bar(site: Site, here: str | None = None) -> str:
     The popovers of the pages but here follow it.
     """
     revision = f" {mono(site.revision)}" if site.revision else ""
-    links = SEPARATOR.join(page_link(name, page, here) for name, page in PAGES)
-    contents = {"about.html": about_html, "settings.html": settings_html}
+    links = SEPARATOR.join(
+        page_link(name, site.page(page), page, here) for name, page in PAGES
+    )
+    contents = {
+        "about.html": about_html(site.page("")),
+        "settings.html": settings_html(),
+    }
     popovers = "".join(
-        popover(target, name, contents[page]())
+        popover(target, name, contents[page])
         for name, page in PAGES
         if (target := POPOVERS.get(page)) and page != here
     )
@@ -3120,6 +3183,48 @@ def root_page(
     return html_page(title, "", body, site.footer, scripts=scripts)
 
 
+def controls_html(view: View | None, site: Site) -> str:
+    """The project, then the controls bar sashiko shows: lists, search, Clear, views.
+
+    Each option of the project select is this page of that project, which
+    theme.js opens; the select is no field of the search.
+    """
+    clear = url("", site.page((view or View.SERIES).page))
+    kind = view.page if view else "search.html"
+    named = "".join(
+        f'<option value="{escape(url("", prefix + kind))}"'
+        f"{' selected' if name == site.project else ''}>"
+        f"{escape(PROJECTS.get(name, name))}</option>"
+        for name, prefix in site.prefixes.items()
+    )
+    project = (
+        '<select id="project" class="button" aria-label="Project"'
+        f' autocomplete="off">{named}</select>'
+    )
+    options = "".join(
+        f'<option value="{escape(address)}" title="{escape(address)}">'
+        f"{escape(list_name(address))}</option>"
+        for address in site.lists
+    )
+    views = "".join(
+        f'<a class="button{" active" if other is view else ""}"'
+        f'{' aria-current="page"' if other is view else ""}'
+        f' href="{escape(url("", site.page(other.page)))}">{other.label}</a>'
+        for other in View
+    )
+    return (
+        f'<form class="controls" action="{escape(url("", site.page("search.html")))}"'
+        f' method="get" role="search">{project if named else ""}'
+        '<select id="list" name="list" class="button" aria-label="Mailing list">'
+        f'<option value="">All lists</option>{options}</select>'
+        '<input type="search" id="search" name="q" aria-label="Search"'
+        ' placeholder="Search: subject, author, list, Message-ID, base, build">'
+        '<button type="submit" class="button">Search</button>'
+        f'<a class="button" href="{escape(clear)}">Clear</a>'
+        f'<nav class="views" aria-label="Views">{views}</nav></form>'
+    )
+
+
 # Where search.js names the filters a chart's link set, which the form lacks.
 FILTERS_NOTE = '\n<p class="muted" id="filters" hidden></p>'
 
@@ -3131,15 +3236,15 @@ def listing_page(site: Site, view: View | None, sections: str) -> str:
 <h1>Results</h1>
 <p class="muted">Each series is set against the records of its base, built the
 same way.</p>
-{controls_html(view, site.lists)}{"" if view else FILTERS_NOTE}
+{controls_html(view, site)}{"" if view else FILTERS_NOTE}
 </section>
 {sections}"""
     script = None if view else "search.js"
     return root_page(site, NAME, body, script=script)
 
 
-# The columns of the index's tables, as col classes and their heads, each
-# width in style.css, so that a table looks the same on every page it is on
+# The columns of the index's series, as col classes and their heads, each
+# width in style.css, so that the table looks the same on every page it is on
 # whatever its rows hold.
 SERIES_COLUMNS = (
     ("subject", "<th>Subject</th>"),
@@ -3149,16 +3254,6 @@ SERIES_COLUMNS = (
     ("base", "<th>Base</th>"),
     ("findings", "<th>Findings</th>"),
 )
-
-
-def bases_columns(*, dated: bool) -> tuple[tuple[str, str], ...]:
-    recorded = (("recorded", "<th>Recorded</th>"),) if dated else ()
-    return (
-        ("commit", "<th>Commit</th>"),
-        ("builds", "<th>Builds</th>"),
-        *recorded,
-        ("producers", "<th>Producer</th>"),
-    )
 
 
 def fixed_table(columns: Sequence[tuple[str, str]], body: str) -> str:
@@ -3171,21 +3266,34 @@ def fixed_table(columns: Sequence[tuple[str, str]], body: str) -> str:
     )
 
 
-def series_section(rows: Sequence[str], pager: str = "") -> str:
+def series_section(rows: Sequence[str], pager: str = "", bases: str = "") -> str:
+    """The series' table; with no row, a line that links bases, where given."""
     none_yet = '<tr><td colspan="6" class="muted">No series yet.</td></tr>'
     table = fixed_table(SERIES_COLUMNS, "".join(rows) or none_yet)
+    if bases and not rows:
+        table = (
+            '<p class="muted">No series yet. Every record of this project is of'
+            f' a base: see <a href="{escape(bases)}">Bases</a>.</p>'
+        )
     return f'<section id="series"><h2>Series</h2>\n{table}{pager}</section>\n'
 
 
 def bases_section(rows: Sequence[str], *, dated: bool) -> str:
-    table = fixed_table(bases_columns(dated=dated), "".join(rows))
-    return f'<section id="bases"><h2>Bases</h2>\n{table}</section>\n'
+    """The bases' table, one page of it, its columns sized by what they hold."""
+    recorded = "<th>Recorded</th>" if dated else ""
+    return (
+        '<section id="bases"><h2>Bases</h2>\n<div class="scroll">'
+        '<table class="rows bases">\n<thead><tr><th>Commit</th><th>Builds</th>'
+        f"{recorded}<th>Producer</th></tr></thead>\n<tbody>{''.join(rows)}</tbody>\n"
+        "</table></div></section>\n"
+    )
 
 
 def index_pages(site: Site) -> dict[str, str]:
-    """The site's root pages by name: the series, the bases and the search.
+    """A project's root pages by name: the series, the bases and the search.
 
     The series show PER_PAGE a page, newest first; the search holds them all.
+    Each is written under site.page of its name.
     """
     by_parts, dated, versions = site.by_parts, site.dated, site.versions
     found: list[tuple[Order, str]] = [
@@ -3220,19 +3328,22 @@ def index_pages(site: Site) -> dict[str, str]:
         [base_row(overview, dated=dated) for overview in site.bases], dated=dated
     )
     count = max(1, -(-len(rows) // PER_PAGE))
+    listed = url("", site.page(View.BASES.page)) if site.bases else ""
     pages = {
         page_name(number): listing_page(
             site,
             View.SERIES,
             series_section(
                 rows[(number - 1) * PER_PAGE : number * PER_PAGE],
-                pager_html(number, count, len(rows)),
+                pager_html(number, count, len(rows), site.page("")),
+                listed,
             ),
         )
         for number in range(1, count + 1)
     }
     pages[View.BASES.page] = listing_page(site, View.BASES, bases)
-    pages["search.html"] = listing_page(site, None, series_section(rows) + bases)
+    series = series_section(rows, bases=listed)
+    pages["search.html"] = listing_page(site, None, series + bases)
     pages["about.html"] = about_page(site)
     pages["settings.html"] = settings_page(site)
     pages["stats.html"] = stats_page(site)
@@ -3261,8 +3372,8 @@ GITHUB_MARK = (
 )
 
 
-def about_html() -> str:
-    """What About says, on about.html and in its popover."""
+def about_html(prefix: str = "") -> str:
+    """What About says, on about.html and in its popover, of prefix's project."""
     return f"""
 <p>This site shows what deterministic tools report on the
 <a href="https://kernel.org">Linux kernel</a> and
@@ -3277,12 +3388,12 @@ systems write their results as <a href="{HOME}">{NAME}</a> records, and
 <a href="https://github.com/linux-kdevops/kdevops-ng">kdevops-ng</a> is the first
 that does.</p>
 <h2>Reading it</h2>
-<p><a href="{escape(url("", "index.html"))}">Series</a> lists each series, newest
-first, with a line per build: a check mark where the series introduced nothing,
+<p><a href="{escape(url("", prefix + "index.html"))}">Series</a> lists each series,
+newest first, with a line per build: a check mark where the series introduced nothing,
 else counts, each named on hover. A series' page shows only what changed from its
 base.</p>
-<p><a href="{escape(url("", "bases.html"))}">Bases</a> lists the commits series
-are set against. A base's page shows every output whole.</p>
+<p><a href="{escape(url("", prefix + "bases.html"))}">Bases</a> lists the commits
+series are set against. A base's page shows every output whole.</p>
 <p>The site takes its look from
 <a href="https://github.com/sashiko-dev/sashiko">sashiko</a>, and its first version
 took its plain, file-based pages from
@@ -3296,8 +3407,8 @@ href="https://github.com/linux-kdevops/kdevops-results-archive">kdevops-results-
 
 def about_page(site: Site) -> str:
     body = f"""
-{back_link()}
-<section class="stack"><h1>About</h1>{about_html()}</section>
+{back_link("", site.page("index.html"))}
+<section class="stack"><h1>About</h1>{about_html(site.page(""))}</section>
 """
     return root_page(site, f"About {NAME}", body, here="about.html")
 
@@ -3328,7 +3439,7 @@ follows the system's theme.</p>
 
 def settings_page(site: Site) -> str:
     body = f"""
-{back_link()}
+{back_link("", site.page("index.html"))}
 <section class="stack"><h1>Settings</h1>{settings_html()}</section>
 """
     return root_page(site, "Settings", body, here="settings.html")
@@ -3487,12 +3598,12 @@ def table_view(head: Sequence[str], rows: Iterable[Sequence[str]]) -> str:
     )
 
 
-def search_href(**filters: str) -> str:
-    """search.html with filters, as the chart marks link it."""
+def search_href(page: str, **filters: str) -> str:
+    """The search page with filters, as the chart marks link it."""
     query = "&".join(
         f"{name}={quote(value, safe='')}" for name, value in filters.items()
     )
-    return url("", "search.html") + (f"?{query}" if query else "")
+    return url("", page) + (f"?{query}" if query else "")
 
 
 def y_axis(
@@ -3528,7 +3639,7 @@ def week_label(monday: date) -> str:
     return f"{year}-W{week:02}"
 
 
-def weekly_chart(facts: Sequence[Facts]) -> str:
+def weekly_chart(facts: Sequence[Facts], search: str) -> str:
     """Series per ISO week by cover date, stacked by outcome."""
     dated = [
         (date.fromisocalendar(int(f.week[:4]), int(f.week[6:]), 1), f)
@@ -3563,7 +3674,7 @@ def weekly_chart(facts: Sequence[Facts]) -> str:
             )
             week = week_label(monday)
             title = f"{week}: {count} {outcome.label.lower()}"
-            href = search_href(week=week, outcome=outcome.value)
+            href = search_href(search, week=week, outcome=outcome.value)
             marks.append(mark(href, title, shape, f"o-{outcome.value}"))
         if n % every == 0:
             labels.append(
@@ -3642,7 +3753,9 @@ def hbars(
     return svg(height, label, body)
 
 
-def checks_chart(facts: Sequence[Facts], applied: Sequence[Overview]) -> str:
+def checks_chart(
+    facts: Sequence[Facts], applied: Sequence[Overview], search: str
+) -> str:
     """Per tool, the series that introduced something in it."""
     checked = Counter[str]()
     for overview in applied:
@@ -3659,7 +3772,7 @@ def checks_chart(facts: Sequence[Facts], applied: Sequence[Overview]) -> str:
                 (
                     introduced[name],
                     "s1",
-                    search_href(check=name),
+                    search_href(search, check=name),
                     (
                         f"{name}: {introduced[name]} of {checked[name]} series"
                         " introduced something"
@@ -3677,7 +3790,7 @@ def checks_chart(facts: Sequence[Facts], applied: Sequence[Overview]) -> str:
     )
 
 
-def lists_chart(facts: Sequence[Facts]) -> str:
+def lists_chart(facts: Sequence[Facts], search: str) -> str:
     """Per mailing list, the series checked, split by what they introduced."""
     shown = (Outcome.INTRODUCED, Outcome.CLEAN)
     counts = Counter(
@@ -3701,7 +3814,7 @@ def lists_chart(facts: Sequence[Facts]) -> str:
                     (
                         counts[address, o],
                         f"o-{o.value}",
-                        search_href(list=address, outcome=o.value),
+                        search_href(search, list=address, outcome=o.value),
                         f"{name}: {counts[address, o]} {o.label.lower()}",
                     )
                     for o in shown
@@ -3718,7 +3831,7 @@ def lists_chart(facts: Sequence[Facts]) -> str:
                     (
                         count,
                         f"o-{o.value}",
-                        search_href(outcome=o.value),
+                        search_href(search, outcome=o.value),
                         f"{len(rest)} other lists: {count} {o.label.lower()}",
                     )
                     for o, count in zip(shown, other, strict=True)
@@ -3854,14 +3967,14 @@ def dots_chart(
             f'<circle class="ring" cx="{x}" cy="{y}" r="4"/>'
         )
         title = (
-            f"{t.tree.commit} {t.tree.build} ({name}): {t.minutes:.1f} minutes,"
+            f"{t.tree.commit} {t.tree.named} ({name}): {t.minutes:.1f} minutes,"
             f" {stamp(t.when)} UTC{'; ' if t.took else ''}{t.took}"
         )
         dots.append(mark(url("", *t.tree.parts, "index.html"), title, shape, kind))
     body = f'{grid}<g class="marks">{"".join(dots)}</g>{"".join(months)}'
     table = [
         [
-            escape(f"{t.tree.commit} {t.tree.build}"),
+            escape(f"{t.tree.commit} {t.tree.named}"),
             escape(kind_of(t)[2]),
             f"{t.minutes:.1f}",
             escape(t.took),
@@ -3976,23 +4089,23 @@ def stats_page(site: Site) -> str:
         [escape(name), str(checked), str(bad), str(checked - bad)]
         for name, (checked, bad) in suite_outcomes(applied).items()
     ]
-    facts = site.facts
+    facts, search = site.facts, site.page("search.html")
     body = f"""
-{back_link()}
+{back_link("", site.page("index.html"))}
 <section><h1>Stats</h1>
 <p class="muted">Counts of the records this site was rendered from. Each mark on a
 chart links to its series.</p></section>
 <section><div class="stat-card-grid">{"".join(cards)}</div></section>
 <section><h2>Series per week</h2><p class="note text-muted-sm">By the ISO week of
 the cover letter's date, in UTC, and by outcome.</p>
-<div class="chart-card">{weekly_chart(facts)}</div></section>
+<div class="chart-card">{weekly_chart(facts, search)}</div></section>
 <section><h2>Findings introduced, by tool</h2><p class="note text-muted-sm">The
 series that introduced a failure, new lines or new findings in each tool's
 records.</p>
-<div class="chart-card">{checks_chart(facts, applied)}</div></section>
+<div class="chart-card">{checks_chart(facts, applied, search)}</div></section>
 <section><h2>Series per mailing list</h2><p class="note text-muted-sm">The checked
 series sent to each list: the {TOP_LISTS} busiest by name, the rest as Other.</p>
-<div class="chart-card">{lists_chart(facts)}</div></section>
+<div class="chart-card">{lists_chart(facts, search)}</div></section>
 <section><h2>Kernel build time</h2><p class="note text-muted-sm">Minutes each
 kernel build took, on a log scale, by its cover letter's date or, for a base,
 when its records were committed.</p>
@@ -4026,10 +4139,9 @@ def series_overview(
     series: Series,
     base: Overview | None,
     marks: Marks,
-    *,
-    dated: bool,
+    site: Site,
 ) -> str:
-    root = "../" * len(overview.parts)
+    root, dated = "../" * len(overview.parts), site.dated
     cover = overview.cover
     trees = [page.tree for page in overview.builds]
     base_commit = base_commit_html(overview.project, series)
@@ -4047,7 +4159,7 @@ def series_overview(
     when = "<th>Recorded</th>" if dated else ""
     rows = (
         covered(
-            f"<tr><td>{tree_link(root, page.tree, page.tree.build, main=True)}</td>"
+            f"<tr><td>{tree_link(root, page.tree, page.tree.named, main=True)}</td>"
             f"<td>{suite_findings(page)}</td>"
             f"{recorded_td(page.tree.recorded, dated=dated)}"
             f"<td>{producers_html(producers(page.tree))}</td></tr>",
@@ -4057,7 +4169,7 @@ def series_overview(
     )
     head = f"<th>Build</th><th>Findings</th>{when}<th>Producer</th>"
     return f"""
-{back_link(root)}
+{back_link(root, site.page("index.html"))}
 <section><h1>{escape(title_of(cover, series))}</h1>
 <p class="muted mono">{commit_html(overview, series)}</p></section>
 <section>{definitions(items)}</section>
@@ -4083,14 +4195,14 @@ def b4_section(log: str | Unreadable | None) -> str:
     )
 
 
-def base_overview(overview: Overview, *, dated: bool) -> str:
+def base_overview(overview: Overview, site: Site) -> str:
     root = "../" * len(overview.parts)
     return f"""
-{back_link(root, "bases.html")}
+{back_link(root, site.page("bases.html"))}
 <section><h1 class="mono">{escape(overview.commit)}</h1>
 <p class="muted">Records of this commit, one row per build; a series on it is set
 against the build of the same name.</p></section>
-{plain_builds(overview, root, dated=dated)}
+{plain_builds(overview, root, dated=site.dated)}
 """
 
 
@@ -4099,7 +4211,7 @@ def plain_builds(overview: Overview, root: str, *, dated: bool) -> str:
     when = "<th>Recorded</th>" if dated else ""
     rows = (
         covered(
-            f"<tr><td>{tree_link(root, tree, tree.build, main=True)}</td>"
+            f"<tr><td>{tree_link(root, tree, tree.named, main=True)}</td>"
             f'<td class="num">{len(tree.records)}</td>'
             f'<td class="num">{failing_html(tree) or "0"}</td>'
             f"{recorded_td(tree.recorded, dated=dated)}"
@@ -4115,7 +4227,7 @@ def plain_builds(overview: Overview, root: str, *, dated: bool) -> str:
     return builds_table(head, rows)
 
 
-def unapplied_page(item: Unapplied, marks: Marks, footer: str) -> str:
+def unapplied_page(item: Unapplied, marks: Marks, site: Site) -> str:
     """A series that does not apply: its cover letter, then what the tool printed."""
     root = "../" * len(item.parts)
     cover = item.cover
@@ -4136,7 +4248,7 @@ def unapplied_page(item: Unapplied, marks: Marks, footer: str) -> str:
         shown = f'<p class="note">{mono(f"{record.path}: {record.reason}")}</p>'
     tool = item.applier.value
     body = f"""
-{back_link(root)}
+{back_link(root, site.page("index.html"))}
 <section><h1>{escape(unapplied_title(item))}</h1>
 <p class="muted">{tool} could not apply the series, so nothing of it was built or
 checked.</p></section>
@@ -4145,25 +4257,24 @@ checked.</p></section>
 <summary>{entry_head(item.key, record, None)}</summary>
 {shown}</details></section>
 """
-    return html_page(unapplied_title(item), root, body, footer)
+    return html_page(unapplied_title(item), root, body, site.footer)
 
 
 def overview_page(
     overview: Overview,
     base: Overview | None,
     marks: Marks,
-    footer: str,
-    *,
-    dated: bool,
+    site: Site,
 ) -> str:
+    """A commit's page, Back to the listing of site, its project's, that has it."""
     root = "../" * len(overview.parts)
     if series := overview.series:
-        body = series_overview(overview, series, base, marks, dated=dated)
+        body = series_overview(overview, series, base, marks, site)
         title = title_of(overview.cover, series)
     else:
-        body = base_overview(overview, dated=dated)
+        body = base_overview(overview, site)
         title = overview.commit
-    return html_page(title, root, body, footer)
+    return html_page(title, root, body, site.footer)
 
 
 def definitions(items: Iterable[tuple[str, str]]) -> str:
@@ -4259,7 +4370,7 @@ def patches_table(series: Series) -> str:
 def back_html(tree: Tree, root: str) -> str:
     """The commit linked to its overview page, then the build."""
     href = escape(url(root, tree.project, tree.commit, "index.html"))
-    return f'<a href="{href}" class="mono">{escape(tree.commit)}</a> {mono(tree.build)}'
+    return f'<a href="{href}" class="mono">{escape(tree.commit)}</a> {mono(tree.named)}'
 
 
 def series_head(page: Page, series: Series, root: str) -> str:
@@ -4271,7 +4382,7 @@ def series_head(page: Page, series: Series, root: str) -> str:
         *ref_items(series),
         ("Patches", str(len(series.commits))),
         ("Base", f"{base_html(page, series, root)} {base_commit}"),
-        ("Build", mono(tree.build)),
+        ("Build", mono(tree.named)),
     ]
     if series.unbuilt:
         items.append(("Not built", escape(", ".join(series.unbuilt))))
@@ -4315,7 +4426,7 @@ def own_commit_html(tree: Tree, series: Series) -> str:
 
 
 def base_head(tree: Tree, root: str) -> str:
-    items = [("Project", escape(tree.project)), ("Build", mono(tree.build))]
+    items = [("Project", escape(tree.project)), ("Build", mono(tree.named))]
     if isinstance(tree.series, Unreadable):
         items.append(("Series", unreadable_html(tree.series)))
     elif tree.series:
@@ -4363,12 +4474,13 @@ def cites(tree: Tree, series: Series | None) -> Cites | None:
     if host is None:
         return None
     commit = quote(revision(tree, series), safe="")
+    blob = "/-/blob" if urlsplit(host).hostname == "gitlab.com" else "/blob"
 
     def href(path: str, line: str) -> str | None:
         # A file the build writes, which the tree does not hold.
         if "generated" in path.split("/"):
             return None
-        return f"{host}/blob/{commit}/{quote(path)}#L{line}"
+        return f"{host}{blob}/{commit}/{quote(path)}#L{line}"
 
     return href
 
@@ -4627,10 +4739,10 @@ def tree_page(page: Page, footer: str) -> str:
     root = "../" * len(tree.parts)
     if page.series:
         head = series_head(page, page.series, root)
-        title = f"{title_of(tree.cover, page.series)} {tree.build}"
+        title = f"{title_of(tree.cover, page.series)} {tree.named}"
     else:
         head = base_head(tree, root)
-        title = f"{tree.commit} {tree.build}"
+        title = f"{tree.commit} {tree.named}"
     keys = list(page.comparisons if page.series else tree.records)
     keys.sort(key=lambda key: not prominent(page, key))
     ids = anchors(keys)
@@ -4765,7 +4877,7 @@ def build_summary(page: Page) -> str:
         said = said or ["nothing introduced"]
         if page.configured is Configured.DIFFERENT:
             said.insert(0, Configured.DIFFERENT.value)
-    return prose(f"{page.tree.build}: {', '.join(said)}", "  ", "    ")
+    return prose(f"{page.tree.named}: {', '.join(said)}", "  ", "    ")
 
 
 def printed(comparison: Comparison, record: Record) -> list[str]:
@@ -4899,7 +5011,7 @@ def report_head(
     fetch puts the build's .config in place first.
     """
     comparison = page.comparisons[key]
-    head = [RULE, prose(f"{key}, {page.tree.build}")]
+    head = [RULE, prose(f"{key}, {page.tree.named}")]
     head += [prose(", ".join([comparison.label, *comparison.notes]))]
     return [*head, *filter(None, [link]), *fetch, "$ " + verbatim(record.command_line)]
 
@@ -4925,7 +5037,7 @@ def report_sections(page: Page, address: str | None, seen: dict[str, str]) -> li
         if configured:
             fetch = []
         rows = printed(comparison, record)
-        name = f"{key}, {page.tree.build}"
+        name = f"{key}, {page.tree.named}"
         sections.append("\n".join(head) + "\n\n" + quoted(rows, seen, name))
     return sections
 
@@ -5012,7 +5124,7 @@ def make_site(
     trees = fold_earlier(load(records, history))
     unapplied = load_unapplied(records, history, trees)
     named = {tree.project for tree in trees} | {item.project for item in unapplied}
-    if clash := sorted(n for n in named if n in RESERVED or PAGED.fullmatch(n)):
+    if clash := sorted(n for n in named if own_file(n, named)):
         raise RenderError(f"a project named {clash[0]} would overwrite the site's own")
     if clash := sorted({t.parts[2] for t in trees} & {"index.html", REPORT}):
         raise RenderError(f"a build under {clash[0]} would overwrite its commit's")
@@ -5036,28 +5148,33 @@ def make_site(
 
 
 def write_site(output: Path, site: Site) -> None:
-    """Write every page of the site into output."""
-    by_parts, footer, dated = site.by_parts, site.footer, site.dated
-    versions = site.versions
+    """Write every page of the site into output, project by project."""
     write(output / MARK, "A site render wrote; the next render replaces it.\n")
     write(output / "style.css", STYLE)
     write(output / "theme.js", THEME)
     write(output / "search.js", SEARCH)
     write(output / "settings.js", SETTINGS)
     write(output / "stats.js", STATS)
-    for name, page in index_pages(site).items():
-        write(output / name, page)
+    for part in project_sites(site):
+        for name, page in index_pages(part).items():
+            write(output / part.page(name), page)
+        write_project(output, part)
+
+
+def write_project(output: Path, site: Site) -> None:
+    """Write the pages of each commit and series of site, a project's."""
+    by_parts, footer, versions = site.by_parts, site.footer, site.versions
     for item in site.unapplied:
         out = output.joinpath(*item.parts)
         marks = Marks(versions.get(item.parts, ()))
-        write(out / "index.html", unapplied_page(item, marks, footer))
+        write(out / "index.html", unapplied_page(item, marks, site))
         if isinstance(item.record, Record) and whole_output(item.record):
             write(out.joinpath(*output_file(item.key)), item.record.output)
     for overview in site.overviews:
         series = overview.series
         base = by_parts.get((overview.project, series.base_name)) if series else None
         marks = Marks(versions.get(overview.parts, ()))
-        page = overview_page(overview, base, marks, footer, dated=dated)
+        page = overview_page(overview, base, marks, site)
         write(output.joinpath(*overview.parts, "index.html"), page)
         if series:
             text = report(overview, series, site.address)

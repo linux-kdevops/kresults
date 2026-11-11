@@ -89,13 +89,44 @@ About is Octicons', under MIT.
   date, 50 to a page, with a findings line per build. Bases have a page
   of their own, and one page holds every row for the search. Every row
   on every page had made a page 173 KB.
+- Every listing is of one project: its series, its bases, its search
+  page and its stats, with the counts, the pager and the lists of that
+  project alone. A record's path names one project and a viewer follows
+  one, and a page of every project's rows shows an empty Series table
+  where only another project, or only bases, have rows.
+- The root pages are the default project's: `linux` where it has rows,
+  else the first by name. Any other project's are the same names after
+  its own and a hyphen, as `qemu-bases.html`, at the root too, so every
+  link on a listing stays relative to the root. No project may be named
+  as one of these files.
+- The project select is the first control, before the list select, and
+  holds the projects that have rows. A choice opens the same view of the
+  project chosen: Series stays Series, Bases stays Bases. It is no field
+  of the search, so an address carries no project. It needs the page's
+  script; with none, the pages of the project shown still read whole.
+- A project with bases and no series says so in one line that links its
+  Bases, where the Series table would be. An empty table read as a site
+  with nothing in it.
+- A link out of the site is the project's own: the trees its tags are
+  on, the tree a `path:LINE` shows in, the form of a commit's address. A
+  QEMU base named `v11.1.0` is no release of the kernel's stable tree.
+- A tree under no build directory is named by its configure's target
+  list where it has one: of the `configure --target-list=LIST` that
+  passed last, or with none passed that ran last. QEMU's make did build,
+  so "no build" is wrong for it; a kernel commit's checkpatch keeps it.
+  Only the name changes, and the page's path stays `-`.
 - A recipient is a mailing list when its series' `series.json` lists
   it. Taking every address without a display name listed maintainers as
   lists (`designs/format.md`).
 - A whole row is a link. Safari positions no table row, so the link's
   box is each cell and not the row.
-- Tables have a fixed layout with one set of column widths. A long row
-  on one page otherwise moved every column on the next.
+- The series table has a fixed layout with one set of column widths. A
+  long row on one page otherwise moved every column on the next.
+- The bases table is one page, and sizes its columns by what they hold,
+  the commit kept on one line. At a fixed 170 pixels the Producer column
+  held about 19 characters and broke `kdevops-ng 571cb7d-dirty` in two,
+  five producers into ten lines, beside a Builds column left mostly
+  empty.
 - A page's parts stack in block flow. WebKit does not always lay a
   grid's rows out again when a `details` element in one changes height,
   and drew one section over another.

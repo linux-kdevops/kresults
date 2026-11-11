@@ -1817,7 +1817,8 @@ class SeriesPage(unittest.TestCase):
             )
         }
         table = re.compile(
-            r'<table class="(?:fixed )?rows">.*?<tbody>(.*?)</tbody>', re.DOTALL
+            r'<table class="(?:fixed )?rows(?: bases)?">.*?<tbody>(.*?)</tbody>',
+            re.DOTALL,
         )
         main = re.compile(r'<a href="([^"]+)" class="(?:mono )?row-link">')
         cover = re.compile(
@@ -1970,6 +1971,37 @@ class SeriesPage(unittest.TestCase):
         self.assertNotIn("other", page)
         self.assertNotIn("objects", page)
         self.assertIn("<dt>Not built</dt><dd>x/y.c</dd>", page)
+
+    def test_no_build_named_by_target_list(self) -> None:
+        runs = (("softmmu", "pass", 2), ("softmm", "fail", 3), ("user", "fail", 1))
+        entries = [
+            entry(
+                status,
+                command=f"configure --target-list=x86_64-{targets}",
+                started=f"2026-01-0{day}T00:00:00Z",
+            )
+            for targets, status, day in runs
+        ]
+        configure = {**record(), "entries": entries}
+        put(self.records / "qemu" / "v2" / "configure.json", configure)
+        put(self.records / "p" / "v2" / "checkpatch.pl.json", record())
+        render.make_site(self.records, self.output)
+        page = self.page("qemu", "v2", render.NO_BUILD_DIR)
+        self.assertIn("<title>v2 x86_64-softmmu", page)
+        self.assertIn(
+            '<dt>Build</dt><dd><span class="mono">x86_64-softmmu</span></dd>', page
+        )
+        self.assertIn(">x86_64-softmmu</a>", self.page("qemu", "v2"))
+        self.assertIn(">x86_64-softmmu</a>", self.root("qemu-bases.html"))
+        self.assertNotIn("no build", page)
+        entries[0] |= {"status": "fail", "exit": 1}
+        put(self.records / "qemu" / "v2" / "configure.json", configure)
+        kernel, qemu = sorted(render.load(self.records, {}), key=lambda t: t.project)
+        self.assertEqual((qemu.named, qemu.build), ("x86_64-softmm", render.NO_BUILD))
+        self.assertEqual(qemu.parts[2:], (render.NO_BUILD_DIR,))
+        self.assertEqual(kernel.named, render.NO_BUILD)
+        page = self.page("p", "v2", render.NO_BUILD_DIR)
+        self.assertIn('<dt>Build</dt><dd><span class="mono">no build</span></dd>', page)
 
     def test_commit_without_builds_skipped(self) -> None:
         self.make(cover=False, link=None, revision=None)
@@ -2389,7 +2421,10 @@ class Index(unittest.TestCase):
                 page = self.index(name)
                 self.assertIn(
                     '<form class="controls" action="./search.html" method="get"'
-                    ' role="search"><select id="list" name="list" class="button"'
+                    ' role="search"><select id="project" class="button"'
+                    ' aria-label="Project" autocomplete="off">'
+                    f'<option value="./{name}" selected>Linux kernel</option></select>'
+                    '<select id="list" name="list" class="button"'
                     ' aria-label="Mailing list"><option value="">All lists</option>',
                     page,
                 )
@@ -2424,10 +2459,10 @@ class Index(unittest.TestCase):
     def test_layout_shared(self) -> None:
         add_series(self.records, "s", cover_letter("s" * 200, None))
         render.make_site(self.records, self.output)
-        table = re.compile(r'<table class="fixed"><colgroup>.*?</thead>', re.DOTALL)
+        table = re.compile(r'<table class="[^"]*">.*?</thead>', re.DOTALL)
         series, bases = (
             render.fixed_table(render.SERIES_COLUMNS, ""),
-            render.fixed_table(render.bases_columns(dated=False), ""),
+            render.bases_section([], dated=False),
         )
         heads = {
             name: table.findall(self.index(name))
@@ -2441,8 +2476,10 @@ class Index(unittest.TestCase):
             '<col class="parts"><col class="base"><col class="findings"></colgroup>',
             series,
         )
-        for name, _ in (*render.SERIES_COLUMNS, *render.bases_columns(dated=True)):
+        for name, _ in render.SERIES_COLUMNS:
             self.assertIn(f"col.{name}", render.STYLE)
+        self.assertIn('<table class="rows bases">', bases)
+        self.assertNotIn("colgroup", bases)
         self.assertIn("table.fixed { table-layout: fixed;", render.STYLE)
         self.assertIn("table.fixed td { overflow-wrap: anywhere; }", render.STYLE)
 
@@ -2863,8 +2900,24 @@ class BaseLinks(unittest.TestCase):
             ' class="mono" title="linux-kdevops">d68ce4e71248</a>',
         )
         self.assertEqual(
-            self.link(self.series("v7.4-rc1-261-gd68ce4e71248"), "qemu"),
+            self.link(self.series("v7.4-rc1-261-gd68ce4e71248"), "other"),
             '<span class="mono muted">d68ce4e71248</span>',
+        )
+
+    def test_qemu(self) -> None:
+        for name in ("v11.1.0", "v11.1.0-3011-gd68ce4e71248"):
+            with self.subTest(name=name):
+                self.assertEqual(
+                    self.link(self.series(name), "qemu"),
+                    f'<a href="https://gitlab.com/qemu-project/qemu/-/commit/{self.sha}"'
+                    ' class="mono" title="qemu-project">d68ce4e71248</a>',
+                )
+        qemu = dataclasses.replace(linux("v11.1.0"), project="qemu")
+        cited = render.cites(qemu, None)
+        self.assertEqual(
+            render.pictured("../hw/nvme/ctrl.c:12:3: warning: x", cited),
+            '<a href="https://gitlab.com/qemu-project/qemu/-/blob/v11.1.0/hw/nvme/'
+            'ctrl.c#L12">../hw/nvme/ctrl.c:12</a>:3: warning: x',
         )
 
 
@@ -3050,6 +3103,98 @@ class ListFilter(unittest.TestCase):
             "bases.hidden = narrowed.length > 0",
         ):
             self.assertIn(part, render.SEARCH)
+
+
+class Projects(unittest.TestCase):
+    def setUp(self) -> None:
+        top = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, top)
+        self.records, self.output = top / "records", top / "public"
+
+    def read(self, *parts: str) -> str:
+        return self.output.joinpath(*parts).read_text(encoding="utf-8")
+
+    def test_a_listing_is_of_one_project(self) -> None:
+        base_build(self.records)
+        add_series(self.records, "s", None)
+        unapplied(self.records, "m@x", "b4/shazam", record("fail"))
+        put(self.records / "qemu" / "v11.1.0" / "configure.json", record())
+        put(self.records / "other" / "v2" / "make" / "all.json", record())
+        render.make_site(self.records, self.output)
+        pages = {"index.html": 2, "bases.html": 1, "search.html": 3}
+        row = re.compile(r'<a href="\./([^/"]+)/[^"]*" class="(?:mono )?row-link">')
+        for prefix, project in (("", "linux"), ("other-", "other"), ("qemu-", "qemu")):
+            for name, rows in pages.items():
+                with self.subTest(page=prefix + name):
+                    page = self.read(prefix + name)
+                    self.assertNotIn("All projects", page)
+                    self.assertIn(
+                        f' role="search"><select id="project" class="button"'
+                        f' aria-label="Project" autocomplete="off">'
+                        f'<option value="./{name}"{" selected" * (not prefix)}>'
+                        "Linux kernel</option>"
+                        f'<option value="./other-{name}"'
+                        f'{" selected" * (project == "other")}>other</option>'
+                        f'<option value="./qemu-{name}"'
+                        f'{" selected" * (project == "qemu")}>QEMU</option>'
+                        '</select><select id="list"',
+                        page,
+                    )
+                    self.assertIn(f' action="./{prefix}search.html"', page)
+                    self.assertIn(f' href="./{prefix}index.html">Series</a>', page)
+                    self.assertIn(f' href="./{prefix}bases.html">Bases</a>', page)
+                    self.assertIn(f' href="./{prefix}stats.html">Stats</a>', page)
+                    found = row.findall(page)
+                    self.assertLessEqual(set(found), {project})
+                    if prefix:
+                        self.assertEqual(len(found), name != "index.html")
+                    else:
+                        self.assertEqual(len(found), rows)
+                    self.assertNotIn("data-project", page)
+        bar = '<span class="stats-val">{}</span> Series'
+        self.assertIn(bar.format(2), self.read("index.html"))
+        self.assertIn(bar.format(0), self.read("qemu-index.html"))
+        self.assertIn(
+            'href="../../qemu-bases.html">', self.read("qemu", "v11.1.0", "index.html")
+        )
+        self.assertIn(
+            'href="../../index.html">', self.read("linux", "m@x", "index.html")
+        )
+        self.assertNotIn("kernel.org", self.read("qemu", "v11.1.0", "index.html"))
+        self.assertIn("location.assign(page);", render.THEME)
+        self.assertNotIn("project", render.SEARCH)
+        self.assertIn("(sought && !base)", render.SEARCH)
+
+    def test_default_is_the_first_without_linux(self) -> None:
+        put(self.records / "qemu" / "v11.1.0" / "configure.json", record())
+        put(self.records / "other" / "v2" / "make" / "all.json", record())
+        render.make_site(self.records, self.output)
+        self.assertIn(
+            '<option value="./index.html" selected>other</option>'
+            '<option value="./qemu-index.html">QEMU</option>',
+            self.read("index.html"),
+        )
+        self.assertFalse((self.output / "other-index.html").exists())
+
+    def test_no_series_links_bases(self) -> None:
+        put(self.records / "qemu" / "v11.1.0" / "configure.json", record())
+        base_build(self.records)
+        add_series(self.records, "s", None)
+        render.make_site(self.records, self.output)
+        line = (
+            '<section id="series"><h2>Series</h2>\n<p class="muted">No series yet.'
+            " Every record of this project is of a base: see"
+            ' <a href="./qemu-bases.html">Bases</a>.</p></section>'
+        )
+        self.assertIn(line, self.read("qemu-index.html"))
+        self.assertIn(line, self.read("qemu-search.html"))
+        self.assertNotIn("No series yet.", self.read("index.html"))
+
+    def test_project_named_as_a_listing(self) -> None:
+        put(self.records / "qemu" / "v1" / "configure.json", record())
+        put(self.records / "qemu-bases.html" / "v1" / "configure.json", record())
+        with self.assertRaisesRegex(render.RenderError, "bases.html"):
+            render.make_site(self.records, self.output)
 
 
 class Site(unittest.TestCase):
