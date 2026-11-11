@@ -308,6 +308,8 @@ def file_run(args: argparse.Namespace) -> None:
         compiler = "clang" if find(r"^(CONFIG_CC_IS_CLANG=y)$", text) else "gcc"
         names = {"configuration": [args.configuration], "arch": arch}
         subject["build"] = {**names, "compiler": compiler}
+        # The .config says which compiler built: no producer names it too.
+        entry["tools"] += [] if compiler in args.tool else [tool(compiler)]
         entry["config"] = "sha256:" + hashlib.sha256(settings).hexdigest()
         build = directory / args.configuration / arch / compiler
     status = int(environ.get("EXIT_STATUS", "0"))

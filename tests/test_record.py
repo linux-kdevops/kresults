@@ -33,6 +33,8 @@ CHECKPATCH = "linux/v1.2/checkpatch.pl.json"
 FAKES = {
     "journalctl": '[ "$1" = --sync ] && exit 1\nexec cat "$JOURNAL"\n',
     "make": "echo GNU Make 4.4.1\necho Built for x86_64-pc-linux-gnu\n",
+    "gcc": "echo 'gcc (Debian 14.2.0-19) 14.2.0'\n",
+    "clang": "echo 'Debian clang version 19.1.7 (3+b1)'\n",
     "checkpatch.pl": "echo Version: 0.32\n",
     "dpkg-query": (
         'case "$1" in\n'
@@ -42,6 +44,11 @@ FAKES = {
     ),
     "lscpu": "echo 'Architecture:  x86_64'\necho 'Model name:    Example CPU'\n",
 }
+
+
+def tool(name: str, version: str) -> Json:
+    """Return a tool as an entry names it, of the package that holds the fakes."""
+    return {"name": name, "version": version, "build": "debian:example-tools 1.0-2"}
 
 
 def printed(message: object) -> Json:
@@ -223,13 +230,8 @@ class RecordTest(unittest.TestCase):
         self.assertEqual(self.read(MAKE)["subject"], subject)
         (entry,) = self.entries()
         (invocation,) = entry.pop("invocations")
-        tool = {
-            "name": "make",
-            "version": "4.4.1",
-            "build": "debian:example-tools 1.0-2",
-        }
         ran = {
-            "tools": [tool],
+            "tools": [tool("make", "4.4.1"), tool("gcc", "14.2.0")],
             "command": "make -s",
             "env": {"KCFLAGS": "-Wextra"},
             "config": "sha256:" + hashlib.sha256(GCC.encode()).hexdigest(),
@@ -330,6 +332,20 @@ class RecordTest(unittest.TestCase):
         self.make(ARCH="arm64", LLVM="1")
         entries = self.entries("linux/v1.2/tinyconfig/arm64/clang/make/all.json")
         self.assertEqual(len(entries), 1)
+        tools = [tool("make", "4.4.1"), tool("clang", "19.1.7")]
+        self.assertEqual(entries[0]["tools"], tools)
+
+    def test_a_compiler_named_as_a_tool_is_there_once(self) -> None:
+        self.make("--tool=gcc")
+        (entry,) = self.entries()
+        tools = [tool("make", "4.4.1"), tool("gcc", "14.2.0")]
+        self.assertEqual(entry["tools"], tools)
+
+    def test_no_compiler_among_the_tools_without_a_config(self) -> None:
+        options = ("--output=checkpatch.pl.json", "--command=checkpatch.pl")
+        self.file(options=(*options, "--tool=checkpatch.pl"))
+        (entry,) = self.entries(CHECKPATCH)
+        self.assertEqual(entry["tools"], [tool("checkpatch.pl", "0.32")])
 
     def test_a_tree_with_changes_is_filed_apart(self) -> None:
         self.git("commit", "--quiet", "--allow-empty", "--message", "init: another")
