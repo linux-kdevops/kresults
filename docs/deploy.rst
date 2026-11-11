@@ -36,18 +36,21 @@ the command as a transient `systemd`_ user unit, in the tree, and name
 
 .. code-block:: text
 
-   $ systemd-run --user --wait --collect --verbose --setenv=PATH \
+   $ systemd-run --user --unit=make-build --wait --collect --verbose \
+       --setenv=PATH \
        --working-directory="$PWD" \
        --property=StateDirectory=krecords \
        --property=ExecStopPost='-env krecord --command make
            --config build/.config --configuration tinyconfig
            --priority warning --producer by-hand --producer-version 1' \
-       systemd-cat --stderr-priority=warning make O=build
+       systemd-cat --identifier=make-build.service \
+           --stderr-priority=warning make O=build
 
 systemd runs ``krecord`` when the command exits, pass or fail, with its
-exit status. ``krecord`` reads what the unit printed from your
-journal, what the run took from the unit's cgroup, and the commit, the
-``.config`` and the tools' builds from the tree and the host.
+exit status. ``krecord`` reads from your journal the lines since the unit
+started whose identifier is the unit's name, which ``--identifier`` gives
+them. It reads what the run took from the unit's cgroup, and the commit,
+the ``.config`` and the tools' builds from the tree and the host.
 :cmd:`systemd-cat` logs make's standard error as warnings and
 ``--priority warning`` keeps only those, so the journal has make's
 progress and the record does not.

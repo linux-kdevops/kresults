@@ -23,6 +23,7 @@ import validate
 type Json = dict[str, Any]
 
 UNIT = "0123456789abcdef0123456789abcdef"
+NAME = "example\\x2dbuild@x.service"
 STARTED = 1767323045
 GCC = "#\n# Linux/x86 7.3.0 Kernel Configuration\n#\nCONFIG_CC_IS_GCC=y\n"
 CLANG = GCC.replace("GCC", "CLANG")
@@ -55,6 +56,7 @@ def printed(message: object) -> Json:
     """Return the journal's entry of a line the command printed."""
     stamp = str((STARTED + 1) * 10**6)
     line = {"_SYSTEMD_INVOCATION_ID": UNIT, "MESSAGE": message}
+    line |= {"SYSLOG_IDENTIFIER": NAME}
     return {**line, "__REALTIME_TIMESTAMP": stamp}
 
 
@@ -137,7 +139,7 @@ class RecordTest(unittest.TestCase):
         # The unit's cgroup, which no test has until it writes one.
         self.cgroups = self.root / "cgroup"
         own = self.root / "self-cgroup"
-        own.write_text("0::/user.slice/example\\x2dbuild@x.service\n")
+        own.write_text(f"0::/user.slice/{NAME}\n")
         self.enterContext(mock.patch.object(record, "SELF_CGROUP", own))
         self.enterContext(mock.patch.object(record, "CGROUPS", self.cgroups))
         self.environ = {
@@ -207,7 +209,7 @@ class RecordTest(unittest.TestCase):
 
     def cgroup(self, *but: str) -> None:
         """Write the files of the unit's cgroup, but for some."""
-        directory = self.cgroups / "user.slice" / "example\\x2dbuild@x.service"
+        directory = self.cgroups / "user.slice" / NAME
         directory.mkdir(parents=True)
         for name, text in CGROUP.items():
             if name not in but:
@@ -330,6 +332,16 @@ class RecordTest(unittest.TestCase):
         self.make(printed("CC a.o"), LEVELS[2], "--priority=warning")
         (entry,) = self.entries()
         self.assertEqual(entry["output"], "b.c:2: error\n")
+
+    def test_the_identifier_finds_a_line_journald_names_no_unit_on(self) -> None:
+        lost = printed("ERROR: example")
+        del lost["_SYSTEMD_INVOCATION_ID"]
+        before = {"__REALTIME_TIMESTAMP": str(STARTED * 10**6 - 1)}
+        earlier = lost | before | {"MESSAGE": "record: of the run before"}
+        other = printed("of another run") | {"_SYSTEMD_INVOCATION_ID": 32 * "e"}
+        self.make(earlier, lost, other)
+        (entry,) = self.entries()
+        self.assertEqual(entry["output"], "ERROR: example\n")
 
     def test_a_build_by_clang_for_the_arch_the_run_set(self) -> None:
         self.config.write_text(CLANG)

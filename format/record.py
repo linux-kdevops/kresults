@@ -7,9 +7,11 @@
 """File one run of a command as a record under --records (README.md).
 
 Run as the ExecStopPost= of the transient systemd user unit that ran the
-command, in the tree it ran on. The journal holds what the command printed.
+command, in the tree it ran on. The journal holds what the command printed,
+each line under the unit's name as its identifier.
 
-    systemd-run --user --wait -p ExecStopPost='krecord --records DIR ...' make
+    systemd-run --user --unit=NAME --wait -p ExecStopPost='krecord ...' \
+        systemd-cat --identifier=NAME.service make
 
 Print each file written, or why the run leaves no record. Exit 0 either way:
 a failing ExecStopPost= would change the unit's result.
@@ -248,17 +250,26 @@ def journal(invocation_id: str, level: int | None = None) -> tuple[list[str], in
     unit = f"INVOCATION_ID={invocation_id}"
     found = run(*query, f"_SYSTEMD_{unit}", "+", f"USER_{unit}")
     entries: list[Json] = [json.loads(line) for line in found.splitlines()]
-    printed = [
-        message_of(entry.get("MESSAGE"))
-        for entry in entries
-        if entry.get("_SYSTEMD_INVOCATION_ID") == invocation_id
-        # A line the journal gives no priority is at info.
-        and (level is None or int(entry.get("PRIORITY", "6")) <= level)
-    ]
     # The manager's start message has the time; without one, the first line's.
     by_manager = [entry for entry in entries if entry.get("JOB_TYPE") == "start"]
     first = (by_manager or entries or [{}])[0]
-    return printed, int(first.get("__REALTIME_TIMESTAMP", time.time_ns() // 1000))
+    started = int(first.get("__REALTIME_TIMESTAMP", time.time_ns() // 1000))
+    # journald names no unit on a line whose writer has exited, so the unit's
+    # name as the identifier finds the lines: those since the start, of no
+    # other run. The manager's own are under its name, and this program's and
+    # those of its earlier runs are not yet written, or older than the start.
+    name = Path(cgroup()).name
+    found = run(*query, f"SYSLOG_IDENTIFIER={name}", f"--since=@{started // 10**6}")
+    printed = [
+        message_of(entry.get("MESSAGE"))
+        for entry in map(json.loads, found.splitlines())
+        if entry.get("SYSLOG_IDENTIFIER") == name
+        and int(entry["__REALTIME_TIMESTAMP"]) >= started
+        and entry.get("_SYSTEMD_INVOCATION_ID", invocation_id) == invocation_id
+        # A line the journal gives no priority is at info.
+        and (level is None or int(entry.get("PRIORITY", "6")) <= level)
+    ]
+    return printed, started
 
 
 def build_of(path: str) -> str:
@@ -296,11 +307,16 @@ def counted(file: Path, pattern: str) -> int | None:
     return sum(map(int, found)) if found else None
 
 
+def cgroup() -> str:
+    """Return the path of this process's cgroup, the unit's, or nothing."""
+    own = SELF_CGROUP.read_text("utf-8") if SELF_CGROUP.is_file() else ""
+    return find(r"^0::(/.*)$", own)
+
+
 def resources() -> Json:
     """Return what the kernel counted of this process's cgroup: the unit's."""
-    own = SELF_CGROUP.read_text("utf-8") if SELF_CGROUP.is_file() else ""
     # Without a cgroup v2 path, CGROUPS alone would be the whole machine's.
-    directory = f"{CGROUPS}{find(r'^0::(/.*)$', own)}"
+    directory = f"{CGROUPS}{cgroup()}"
     used: Json = {}
     for group, members in RESOURCES.items() if directory != str(CGROUPS) else ():
         for member, (file, pattern) in members.items():
