@@ -145,6 +145,36 @@ def run(*command: str) -> str:
     return done.stdout.decode(errors="replace").strip() if not done.returncode else ""
 
 
+def state() -> Path:
+    """Return where the records go when no option says: the user's state."""
+    home = os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state"
+    return Path(home, "krecords")
+
+
+def version_of(tree: Path) -> str:
+    """Return what git describe names the work tree that holds a path's real one."""
+    need(tree.exists(), f"{tree} does not exist")
+    version = run("git", "-C", str(tree.resolve()), "describe", "--always", "--dirty")
+    need(version, f"{tree} is in no Git work tree")
+    return version
+
+
+def configuration_of(args: argparse.Namespace) -> str | None:
+    """Return the configuration's name: the one given, or its file's first line."""
+    file: Path | None = args.configuration_file
+    if file is None:
+        return args.configuration
+    need(file.is_file(), f"{file} does not exist")
+    name = file.read_text("utf-8").partition("\n")[0].strip()
+    need(name, f"{file} names no configuration")
+    return name
+
+
+def named(text: str, configuration: str | None) -> str:
+    """Return a text with the configuration's name where it has {configuration}."""
+    return text.replace("{configuration}", configuration) if configuration else text
+
+
 def find(pattern: str, text: str) -> str:
     """Return the first group of a pattern's first match in a text, or nothing."""
     found = re.search(pattern, text, re.MULTILINE)
@@ -289,6 +319,9 @@ def file_run(args: argparse.Namespace) -> None:
     need(commit, "the working directory is no Git work tree")
     need(config is None or config.is_file(), f"{config} does not exist")
     need(environ.get("EXIT_CODE") == "exited", "the command was stopped")
+    configuration = configuration_of(args)
+    if args.producer_tree:
+        args.producer_version = version_of(args.producer_tree)
     describe = ("--tags", "--match", "v[0-9]*", "--abbrev=12", "--always", "--dirty")
     name = run("git", "describe", *describe)
     directory = build = args.records / args.project / name
@@ -296,8 +329,8 @@ def file_run(args: argparse.Namespace) -> None:
     env = {
         variable: environ[variable] for variable in args.env if environ.get(variable)
     }
-    entry: Json = {"tools": list(map(tool, args.tool)), "command": args.command}
-    entry["env"] = env
+    entry: Json = {"tools": list(map(tool, args.tool))}
+    entry |= {"command": named(args.command, configuration), "env": env}
     settings = config.read_bytes() if config else b""
     if config:
         text = settings.decode(errors="replace")
@@ -306,12 +339,12 @@ def file_run(args: argparse.Namespace) -> None:
         arch = environ.get("ARCH") or find(header, text)
         need(arch, f"{config} names no ARCH")
         compiler = "clang" if find(r"^(CONFIG_CC_IS_CLANG=y)$", text) else "gcc"
-        names = {"configuration": [args.configuration], "arch": arch}
+        names = {"configuration": [configuration], "arch": arch}
         subject["build"] = {**names, "compiler": compiler}
         # The .config says which compiler built: no producer names it too.
         entry["tools"] += [] if compiler in args.tool else [tool(compiler)]
         entry["config"] = "sha256:" + hashlib.sha256(settings).hexdigest()
-        build = directory / args.configuration / arch / compiler
+        build = directory / str(configuration) / arch / compiler
     status = int(environ.get("EXIT_STATUS", "0"))
     entry |= {"status": "fail" if status else "pass", "exit": status}
     if printed:
@@ -320,7 +353,8 @@ def file_run(args: argparse.Namespace) -> None:
         home = re.escape(str(Path.home())) + r"(?![\w.-])"
         entry["output"] = re.sub(home, "~", output) + "\n"
     entry["invocations"] = [invocation(args, lab, started)]
-    write(build / args.output, merged(build / args.output, subject, entry))
+    filed = build / named(args.output, configuration)
+    write(filed, merged(filed, subject, entry))
     if config:
         write(build / "config", settings)
     if not (directory / "series.json").exists():
@@ -336,20 +370,25 @@ def file_run(args: argparse.Namespace) -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     summary = (__doc__ or "").partition("\n")[0]
     parser = argparse.ArgumentParser(description=summary, allow_abbrev=False)
-    for option in ("records", "output", "command", "producer", "producer-version"):
-        kind = Path if option == "records" else str
-        parser.add_argument(f"--{option}", type=kind, required=True)
-    parser.add_argument("--run", required=True, metavar="NAME")
+    parser.add_argument("--records", type=Path, default=state(), metavar="DIR")
+    for option in ("output", "command", "producer"):
+        parser.add_argument(f"--{option}", required=True)
+    version = parser.add_mutually_exclusive_group(required=True)
+    version.add_argument("--producer-version", metavar="VERSION")
+    version.add_argument("--producer-tree", type=Path, metavar="DIR")
+    parser.add_argument("--run", default="manual", metavar="NAME")
     parser.add_argument("--project", default="linux", metavar="NAME")
     parser.add_argument("--config", type=Path, metavar="FILE")
-    parser.add_argument("--configuration", metavar="NAME")
+    name = parser.add_mutually_exclusive_group()
+    name.add_argument("--configuration", metavar="NAME")
+    name.add_argument("--configuration-file", type=Path, metavar="FILE")
     # An entry names at least the tool its command runs first.
     parser.add_argument("--tool", action="append", required=True, metavar="NAME")
     parser.add_argument("--env", action="append", default=[], metavar="VAR")
     parser.add_argument("--priority", choices=PRIORITIES, metavar="LEVEL")
     args = parser.parse_args(argv)
-    if args.config and not args.configuration:
-        parser.error("--config needs --configuration")
+    if args.config and not (args.configuration or args.configuration_file):
+        parser.error("--config needs --configuration or --configuration-file")
     try:
         file_run(args)
     except NoRecordError as why:

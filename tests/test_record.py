@@ -121,7 +121,7 @@ def manager(job: str) -> Json:
 class RecordTest(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
-        self.home = self.root / "alice"
+        self.home = self.root / "user"
         self.tree = self.home / "linux"
         self.records = self.root / "records"
         self.gitconfig = self.root / "gitconfig"
@@ -152,7 +152,7 @@ class RecordTest(unittest.TestCase):
             "CROSS_COMPILE": "",
         }
         self.enterContext(mock.patch.dict(os.environ, self.environ, clear=True))
-        identity = "[user]\n\tname = Alice\n\temail = alice@example.org\n"
+        identity = "[user]\n\tname = User\n\temail = user@example.org\n"
         self.gitconfig.write_text(f"{identity}[kresults]\n\torigin = lab-a\n")
         self.git("init", "--quiet")
         self.git("commit", "--quiet", "--allow-empty", "--message", "init: example")
@@ -161,10 +161,12 @@ class RecordTest(unittest.TestCase):
         self.config = self.tree / "build" / ".config"
         self.config.parent.mkdir()
         self.config.write_text(GCC)
+        # The options a test has record run without: each is given otherwise.
+        self.without: tuple[str, ...] = ()
 
-    def git(self, *command: str) -> str:
+    def git(self, *command: str, tree: Path | None = None) -> str:
         done = subprocess.run(  # noqa: S603
-            ["git", "-C", str(self.tree), *command],  # noqa: S607
+            ["git", "-C", str(tree or self.tree), *command],  # noqa: S607
             check=True,
             capture_output=True,
             text=True,
@@ -187,7 +189,9 @@ class RecordTest(unittest.TestCase):
             mock.patch.dict(os.environ, status),
             contextlib.redirect_stderr(io.StringIO()) as stdout,
         ):
-            self.assertEqual(record.main([*argv, *options]), 0)
+            given = [*argv, *options]
+            kept = [one for one in given if one.partition("=")[0] not in self.without]
+            self.assertEqual(record.main(kept), 0)
         return stdout.getvalue()
 
     def make(self, *journal: Json | str, **environ: str) -> str:
@@ -407,6 +411,81 @@ class RecordTest(unittest.TestCase):
         (self.root / "bin" / "dpkg-query").write_text("#!/bin/sh\nexit 1\n")
         said = self.make()
         self.assertRegex(said, r"^no record: no package of debian holds .*/bin/make\n$")
+        self.assertFalse(self.records.exists())
+
+    def test_the_records_go_to_the_state_directory_by_default(self) -> None:
+        self.without = ("--records",)
+        for state, home in (("", self.home / ".local" / "state"), ("state", None)):
+            given = str(self.root / state) if state else ""
+            self.records = Path(home or given, "krecords")
+            said = self.make(XDG_STATE_HOME=given)
+            self.assertIn(f"record: {self.records / MAKE}\n", said)
+            self.assertEqual(len(self.entries()), 1)
+
+    def test_a_run_of_no_name_is_manual(self) -> None:
+        self.without = ("--run",)
+        self.make()
+        self.assertEqual(self.entries()[0]["invocations"][0]["run"], "manual")
+
+    def producer(self) -> Path:
+        """Return a symlink into a checkout of the producer, apart from the tree."""
+        checkout = self.root / "producer"
+        (checkout / "steps").mkdir(parents=True)
+        self.git("init", "--quiet", tree=checkout)
+        message = ("--allow-empty", "--message", "init: producer")
+        self.git("commit", "--quiet", *message, tree=checkout)
+        link = self.home / "steps"
+        link.symlink_to(checkout / "steps")
+        return link
+
+    def test_a_producer_tree_names_the_version_of_its_checkout(self) -> None:
+        self.without = ("--producer-version",)
+        link = self.producer()
+        self.make(f"--producer-tree={link}")
+        version = self.git("describe", "--always", "--dirty", tree=link.resolve())
+        self.assertNotEqual(version, self.git("describe", "--always", "--dirty"))
+        (invocation,) = self.entries()[0]["invocations"]
+        self.assertEqual(invocation["producer"]["version"], version)
+
+    def test_no_record_with_a_producer_tree_that_is_not_one(self) -> None:
+        self.without = ("--producer-version",)
+        missing, bare = self.root / "none", self.root / "bin"
+        said = self.make(f"--producer-tree={missing}")
+        self.assert_no_record(said, f"{missing} does not exist")
+        said = self.make(f"--producer-tree={bare}")
+        self.assert_no_record(said, f"{bare} is in no Git work tree")
+
+    def test_a_configuration_file_names_the_configuration(self) -> None:
+        self.without = ("--configuration",)
+        (self.tree / "build" / "name").write_text(" tinyconfig \n# Not a name.\n")
+        names = ("--output=make/{configuration}.json", "--command=make {configuration}")
+        self.make("--configuration-file=build/name", *names)
+        (entry,) = self.entries(f"{BUILD}/make/tinyconfig.json")
+        self.assertEqual(entry["command"], "make tinyconfig")
+
+    def test_no_configuration_leaves_the_text_as_it_is(self) -> None:
+        names = ("--output={configuration}.json", "--command=make {configuration}")
+        self.file(options=(*names, "--tool=make"))
+        (entry,) = self.read("linux/v1.2/{configuration}.json")["entries"]
+        self.assertEqual(entry["command"], "make {configuration}")
+
+    def test_no_record_with_a_configuration_file_that_names_none(self) -> None:
+        self.without = ("--configuration",)
+        said = self.make("--configuration-file=build/name")
+        self.assert_no_record(said, "build/name does not exist")
+        (self.tree / "build" / "name").write_text("\n")
+        said = self.make("--configuration-file=build/name")
+        self.assert_no_record(said, "build/name names no configuration")
+
+    def test_both_or_neither_of_two_options_is_an_error(self) -> None:
+        both = ("--producer-tree=.", "--configuration-file=build/name")
+        for option in both:
+            with self.assertRaises(SystemExit):
+                self.make(option)
+        for option in ("--producer-version", "--configuration"):
+            self.without = (option,)
+            with self.assertRaises(SystemExit):
+                self.make()
         self.assertFalse(self.records.exists())
 
 

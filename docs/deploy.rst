@@ -38,12 +38,12 @@ unit's ``ExecStopPost=``:
 
    $ systemd-run --user --wait --collect --verbose --setenv=PATH \
        --working-directory="$PWD" \
-       --property=ExecStopPost='-env krecord --records ../records
+       --property=StateDirectory=krecords \
+       --property=ExecStopPost='-env krecord
            --output make/all.json --command make
            --config build/.config --configuration tinyconfig
-           --priority warning
-           --tool make --tool gcc --env ARCH --env LLVM
-           --producer by-hand --producer-version 1 --run manual' \
+           --priority warning --tool make --env ARCH --env LLVM
+           --producer by-hand --producer-version 1' \
        systemd-cat --stderr-priority=warning make O=build
 
 systemd runs ``krecord`` when the command exits, pass or fail, with its
@@ -53,6 +53,15 @@ journal, what the run took from the unit's cgroup, and the commit, the
 :cmd:`systemd-cat` logs make's standard error as warnings and
 ``--priority warning`` keeps only those, so the journal has make's
 progress and the record does not.
+
+Records go to ``~/.local/state/krecords`` unless ``--records`` names
+another tree, and the run is ``manual`` unless ``--run`` names it.
+``krecord`` adds the compiler the ``.config`` names to the tools. A
+producer whose settings are a file, as a drop-in is, names its version by
+``--producer-tree``, a directory whose Git tree describes the producer.
+``--configuration-file`` names a file another command left in the build,
+and ``{configuration}`` in ``--output`` and ``--command`` stands for what
+it holds.
 
 A run the format cannot file leaves no record: ``krecord`` says why in one
 line and exits 0. That is a run with no lab named, outside a Git work
@@ -66,8 +75,8 @@ Checking records
 
 .. code-block:: console
 
-   $ format/validate.py --records ../records
-   $ nix run .#validate -- --records ../records
+   $ format/validate.py --records ~/.local/state/krecords
+   $ nix run .#validate -- --records ~/.local/state/krecords
 
 ``validate`` prints each file that breaks the format, and why, and exits 1
 if any does. It refuses a version it does not know. A producer complies
@@ -82,7 +91,7 @@ that reads the same with no script:
 
 .. code-block:: console
 
-   $ krender --records ../records --output public
+   $ krender --records ~/.local/state/krecords --output public
 
 Rendering again into the same ``--output`` replaces the site. Its About
 page says how to read it.
@@ -113,7 +122,7 @@ Link the units once, then enable the one that serves:
 
    $ systemctl --user link "$PWD"/units/user/kresults-*
    $ systemctl --user enable --now \
-       "kresults-serve@$(systemd-escape --path ~/records).service"
+       "kresults-serve@$(systemd-escape --path ~/.local/state/krecords).service"
 
 Installed with Nix, the units are in the profile and need no link:
 
@@ -122,7 +131,7 @@ Installed with Nix, the units are in the profile and need no link:
    $ systemctl --user enable --now \
        ~/.nix-profile/lib/systemd/user/kresults-serve@.service
    $ systemctl --user start \
-       "kresults-serve@$(systemd-escape --path ~/records).service"
+       "kresults-serve@$(systemd-escape --path ~/.local/state/krecords).service"
 
 The path unit watches the top of the tree alone, since `inotify`_ reports
 nothing from below a directory. ``krecord`` touches it after it writes, and
