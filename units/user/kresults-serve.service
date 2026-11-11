@@ -4,16 +4,16 @@
 # again. A drop-in sets another PORT.
 
 [Unit]
-Description=kresults Site HTTP Server for %f
+Description=kresults Site HTTP Server
 Documentation=https://github.com/linux-kdevops/kresults/blob/main/docs/deploy.rst
-Wants=kresults-render@%i.path kresults-render@%i.service
-After=kresults-render@%i.service
+Wants=kresults-render.path kresults-render.service
+After=kresults-render.service
 
 [Service]
 Type=exec
 Environment=PORT=8002
 ExecSearchPath=%h/.local/bin:%h/.nix-profile/bin:/usr/local/bin:/usr/bin
-ExecStart=python3 -m http.server --bind 127.0.0.1 --directory %C/kresults/%i ${PORT}
+ExecStart=python3 -m http.server --bind 127.0.0.1 --directory %C/kresults/site ${PORT}
 Restart=on-failure
 NoNewPrivileges=yes
 PrivateUsers=yes

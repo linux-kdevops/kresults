@@ -78,7 +78,6 @@ cmd_links = {
     "nix": "https://nix.dev/manual/nix/latest/command-ref/new-cli/nix",
     "sphinx-build": "https://www.sphinx-doc.org/en/master/man/sphinx-build.html",
     "systemctl": "https://www.freedesktop.org/software/systemd/man/latest/systemctl.html",
-    "systemd-escape": "https://www.freedesktop.org/software/systemd/man/latest/systemd-escape.html",
     "systemd-cat": "https://www.freedesktop.org/software/systemd/man/latest/systemd-cat.html",
     "systemd-run": "https://www.freedesktop.org/software/systemd/man/latest/systemd-run.html",
     "systemd.unit": "https://www.freedesktop.org/software/systemd/man/latest/systemd.unit.html",

@@ -5,7 +5,7 @@
 # path leaves out.
 
 [Unit]
-Description=kresults Site Renderer for %f
+Description=kresults Site Renderer
 Documentation=https://github.com/linux-kdevops/kresults/blob/main/docs/deploy.rst
 # The path unit starts this for every record, and a burst of them must not
 # leave the site behind the tree.
@@ -14,7 +14,7 @@ StartLimitIntervalSec=0
 [Service]
 Type=oneshot
 ExecSearchPath=%h/.local/bin:%h/.nix-profile/bin:/usr/local/bin:/usr/bin
-ExecStart=krender --records %f --output ${CACHE_DIRECTORY}/%i
+ExecStart=krender --records %S/krecords --output ${CACHE_DIRECTORY}/site
 CacheDirectory=kresults
 Slice=background.slice
 NoNewPrivileges=yes

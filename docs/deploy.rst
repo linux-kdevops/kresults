@@ -101,8 +101,8 @@ page says how to read it.
 Serving a site
 ==============
 
-Three user units under :src:`units/user` keep a site of a tree current and
-serve it on 127.0.0.1, port 8002:
+Three user units under :src:`units/user` keep a site of
+``~/.local/state/krecords`` current and serve it on 127.0.0.1, port 8002:
 
 .. list-table::
    :header-rows: 1
@@ -110,30 +110,22 @@ serve it on 127.0.0.1, port 8002:
 
    * - Unit
      - What it does
-   * - ``kresults-serve@.service``
+   * - ``kresults-serve.service``
      - Serves the site. Starting it starts the other two.
-   * - ``kresults-render@.path``
+   * - ``kresults-render.path``
      - Watches the top of the records tree.
-   * - ``kresults-render@.service``
-     - Runs ``krender`` once, into ``~/.cache/kresults``.
+   * - ``kresults-render.service``
+     - Runs ``krender`` once, into ``~/.cache/kresults/site``.
 
-A unit's instance is the tree's path, as :cmd:`systemd-escape` writes it.
 Link the units once, then enable the one that serves:
 
 .. code-block:: console
 
    $ systemctl --user link "$PWD"/units/user/kresults-*
-   $ systemctl --user enable --now \
-       "kresults-serve@$(systemd-escape --path ~/.local/state/krecords).service"
+   $ systemctl --user enable --now kresults-serve.service
 
-Installed with Nix, the units are in the profile and need no link:
-
-.. code-block:: console
-
-   $ systemctl --user enable --now \
-       ~/.nix-profile/lib/systemd/user/kresults-serve@.service
-   $ systemctl --user start \
-       "kresults-serve@$(systemd-escape --path ~/.local/state/krecords).service"
+Installed with Nix, the units to link are
+``~/.nix-profile/lib/systemd/user/kresults-*``.
 
 The path unit watches the top of the tree alone, since `inotify`_ reports
 nothing from below a directory. ``krecord`` touches it after it writes, and
@@ -143,10 +135,10 @@ A drop-in (:cmd:`systemd.unit`) changes a setting, such as the port:
 
 .. code-block:: console
 
-   $ mkdir --parents --verbose ~/.config/systemd/user/kresults-serve@.service.d
+   $ mkdir --parents --verbose ~/.config/systemd/user/kresults-serve.service.d
 
 .. code-block:: ini
-   :caption: ~/.config/systemd/user/kresults-serve@.service.d/port.conf
+   :caption: ~/.config/systemd/user/kresults-serve.service.d/port.conf
 
    [Service]
    Environment=PORT=8080
@@ -155,8 +147,11 @@ A drop-in (:cmd:`systemd.unit`) changes a setting, such as the port:
 
    $ systemctl --user daemon-reload
 
-:cmd:`journalctl` ``--user-unit 'kresults-render@*'`` has each render, and
-why one failed.
+Another records tree takes a drop-in on each of the two render units, for
+``PathChanged=`` and ``ExecStart=``.
+
+:cmd:`journalctl` ``--user-unit kresults-render`` has each render, and why
+one failed.
 
 .. _Git: https://git-scm.com
 .. _inotify: https://man7.org/linux/man-pages/man7/inotify.7.html

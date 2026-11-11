@@ -5,9 +5,9 @@
 # is what this watches.
 
 [Unit]
-Description=kresults Records Watch for %f
+Description=kresults Records Watch
 Documentation=https://github.com/linux-kdevops/kresults/blob/main/docs/deploy.rst
-PartOf=kresults-serve@%i.service
+PartOf=kresults-serve.service
 
 [Path]
-PathChanged=%f
+PathChanged=%S/krecords

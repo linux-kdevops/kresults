@@ -126,6 +126,10 @@ About is Octicons', under MIT.
   serves it is three systemd user units: a path unit on the tree starts
   the render, and Python's own file server serves what it wrote. Nothing
   of the renderer's runs for a while, scans the tree or polls it.
+- The units serve the one tree `krecord` writes by default,
+  `~/.local/state/krecords`. Named for a tree by its escaped path, they
+  put `systemd-escape` in every command for a second tree that no one
+  kept. Another tree is a drop-in.
 - A path unit sees a change in the directory it watches and none below
   it, and records lie several levels down. Whatever writes a record
   touches the top of the tree afterwards, as `krecord` does, and that is
