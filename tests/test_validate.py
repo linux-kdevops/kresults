@@ -112,6 +112,7 @@ def series(commit: str, message_id: str, *commits: str) -> Json:
         "sources": ["init/main.c"] if commits else [],
         "docs": [],
         "added": [],
+        "lists": ["linux-kernel@vger.kernel.org"] if message_id else [],
     }
 
 
@@ -501,6 +502,16 @@ class Validate(unittest.TestCase):
         files = good()
         at(files, BASE_SERIES)["commit"] = TIP
         self.assert_problem(files, BASE_SERIES, "neither its last one nor")
+
+    def test_series_without_lists(self) -> None:
+        files = good()
+        del at(files, SERIES)["lists"]
+        self.assert_problem(files, SERIES, "'lists' is a required property")
+
+    def test_series_list_not_lowercase(self) -> None:
+        files = good()
+        at(files, SERIES)["lists"] = ["Linux-Kernel@vger.kernel.org"]
+        self.assert_problem(files, SERIES, "lists/0: 'Linux-Kernel@vger.kernel.org'")
 
     # A record's command (commands.json).
 

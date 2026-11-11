@@ -65,6 +65,12 @@ the version (`format/CHANGES.md`).
 - A tree with changes not committed is filed under its commit's name with
   `-dirty`, which `git describe --dirty` gives. What ran was not the
   commit, and its records must not pass for the commit's.
+- A series names its mailing lists in `series.json`, as the base's
+  `MAINTAINERS` names them on `L:` lines. A reader told a list from a
+  person by a table of known lists, and the only one at hand was
+  sashiko's, under Apache-2.0. Each project names its own lists, QEMU's
+  as well. A series that did not apply has no `series.json`, and so no
+  lists.
 
 ## Open
 

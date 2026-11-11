@@ -253,6 +253,7 @@ class RecordTest(unittest.TestCase):
         self.assertEqual(series["base"], self.commit)
         self.assertEqual(series["base_name"], "v1.2")
         self.assertEqual(series["commits"], [])
+        self.assertEqual(series["lists"], [])
 
     def test_a_fail_with_output(self) -> None:
         said = self.make(

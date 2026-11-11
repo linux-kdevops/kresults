@@ -24,3 +24,9 @@ ignore = [
 [lint.per-file-ignores]
 # unittest finds the tests as top-level modules, not as a package.
 "tests/*" = ["INP001"]
+# A docstring of render and of its tests names what a function gives, as a
+# noun phrase.
+"tests/test_render.py" = ["D401"]
+# A RecordError's message is the reason a page shows, written where it is
+# found.
+"format/render.py" = ["D401", "EM101", "EM102", "TRY003"]

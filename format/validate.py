@@ -23,7 +23,7 @@ from typing import Any, NotRequired, TypedDict, cast
 
 from jsonschema import Draft7Validator, ValidationError, validators
 from jsonschema.protocols import Validator
-from record import run_of
+from record import ARCHES, COMPILERS, run_of
 
 # The fields the checks read, which a file has once its schema passes it.
 
@@ -75,39 +75,6 @@ class Objects(TypedDict):
 # The versions this validator knows. A file of any other is refused, so a
 # reader learns a version before a producer writes it (CHANGES.md).
 KNOWN = frozenset({1})
-# The names kbuild takes as ARCH: each directory of arch/, then each name its
-# top Makefile maps to one.
-ARCHES = frozenset(
-    {
-        "alpha",
-        "arc",
-        "arm",
-        "arm64",
-        "csky",
-        "hexagon",
-        "loongarch",
-        "m68k",
-        "microblaze",
-        "mips",
-        "nios2",
-        "openrisc",
-        "parisc",
-        "powerpc",
-        "riscv",
-        "s390",
-        "sh",
-        "sparc",
-        "um",
-        "x86",
-        "xtensa",
-        "i386",
-        "parisc64",
-        "sparc32",
-        "sparc64",
-        "x86_64",
-    }
-)
-COMPILERS = frozenset({"clang", "gcc"})
 # The abbreviated hash in the name git describe gives a commit that no tag
 # names: all of the name, or what follows a tag and a count.
 HASH = re.compile(r"(?:.+-\d+-g)?([0-9a-f]{12,})")

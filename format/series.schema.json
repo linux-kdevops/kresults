@@ -16,7 +16,8 @@
     "commits",
     "sources",
     "docs",
-    "added"
+    "added",
+    "lists"
   ],
   "properties": {
     "schema": {
@@ -130,6 +131,15 @@
     "added": {
       "description": "The files the series adds",
       "$ref": "#/definitions/paths"
+    },
+    "lists": {
+      "description": "The series' mailing lists: the addresses of its cover letter's To and Cc, or of its first patch's without one, that the base's MAINTAINERS names on an L: line, lowercased and sorted; empty for a commit that came from no message",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[^@\\sA-Z]+@[^@\\sA-Z]+$"
+      }
     }
   },
   "definitions": {

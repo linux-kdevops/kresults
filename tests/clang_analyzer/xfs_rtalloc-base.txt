@@ -1,0 +1,31 @@
+15 warnings generated.
+../fs/xfs/xfs_rtalloc.c:336:9: error: Assigned value is uninitialized [clang-analyzer-core.uninitialized.Assign,-warnings-as-errors]
+  336 |         *nextp = next;
+      |                ^
+../fs/xfs/xfs_rtalloc.c:2179:9: note: Assuming the condition is true
+ 2179 |         ASSERT(!xfs_has_zoned(ap->tp->t_mountp));
+      |                ^
+../fs/xfs/xfs_rtalloc.c:2183:6: note: 'error' is 0
+ 2183 |         if (error)
+      |             ^~~~~
+../fs/xfs/xfs_rtalloc.c:465:17: error: Right operand is negative in left shift [clang-analyzer-core.BitwiseShift,-warnings-as-errors]
+  465 |                                       (1ULL << (maxlog + 1)) - 1);
+      |                                             ^
+../fs/xfs/xfs_rtalloc.c:2179:9: note: Assuming the condition is true
+ 2179 |         ASSERT(!xfs_has_zoned(ap->tp->t_mountp));
+      |                ^
+../fs/xfs/xfs_rtalloc.c:590:7: error: 2nd function call argument is an uninitialized value [clang-analyzer-core.CallAndMessage,-warnings-as-errors]
+  590 |                 if (xfs_rtx_to_rbmblock(args->mp, n) > i + 1)
+      |                     ^
+../fs/xfs/xfs_rtalloc.c:2179:9: note: Assuming the condition is true
+ 2179 |         ASSERT(!xfs_has_zoned(ap->tp->t_mountp));
+      |                ^
+../fs/xfs/xfs_rtalloc.c:1731:2: error: Undefined or garbage value returned to caller [clang-analyzer-core.uninitialized.UndefReturn,-warnings-as-errors]
+ 1731 |         return error;
+      |         ^      ~~~~~
+../fs/xfs/xfs_rtalloc.c:1711:2: note: 'error' declared without an initial value
+ 1711 |         int                     error;
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Suppressed 11 warnings (11 in non-user code).
+Use -header-filter=.* to display errors from all non-system headers. Use -system-headers to display errors from system headers as well.
+4 warnings treated as errors

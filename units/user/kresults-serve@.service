@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: copyleft-next-0.3.1
+#
+# Starting this renders the site once and starts the watch that renders it
+# again. A drop-in sets another PORT.
+
+[Unit]
+Description=kresults Site HTTP Server for %f
+Documentation=https://github.com/linux-kdevops/kresults/blob/main/docs/deploy.rst
+Wants=kresults-render@%i.path kresults-render@%i.service
+After=kresults-render@%i.service
+
+[Service]
+Type=exec
+Environment=PORT=8002
+ExecSearchPath=%h/.local/bin:%h/.nix-profile/bin:/usr/local/bin:/usr/bin
+ExecStart=python3 -m http.server --bind 127.0.0.1 --directory %C/kresults/%i ${PORT}
+Restart=on-failure
+NoNewPrivileges=yes
+PrivateUsers=yes
+ProtectHome=read-only
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=default.target

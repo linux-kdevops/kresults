@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: copyleft-next-0.3.1
+#
+# inotify reports nothing from below a directory, and records lie several
+# levels down. krecord touches the top of the tree it writes in, and that
+# is what this watches.
+
+[Unit]
+Description=kresults Records Watch for %f
+Documentation=https://github.com/linux-kdevops/kresults/blob/main/docs/deploy.rst
+PartOf=kresults-serve@%i.service
+
+[Path]
+PathChanged=%f

@@ -5,8 +5,10 @@
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   outputs =
-    { nixpkgs, ... }:
+    { self, nixpkgs, ... }:
     let
+      # The revision of krender a site names in its status bar.
+      revision = self.rev or self.dirtyRev or "unknown";
       # validate needs only Python, so macOS checks records too.
       systems = [
         "x86_64-linux"
@@ -32,6 +34,33 @@
             pkgs.git
           ];
           text = ''exec python3 ${./format}/record.py "$@"'';
+        };
+        render = pkgs.writeShellApplication {
+          name = "krender";
+          runtimeInputs = [
+            pkgs.python3
+            pkgs.git
+          ];
+          text = ''exec python3 ${./format}/render.py --revision ${nixpkgs.lib.escapeShellArg revision} "$@"'';
+        };
+        # The three programs and the units, which find them by store path
+        # where a clone's units search a developer's own directories.
+        kresults = pkgs.symlinkJoin {
+          name = "kresults";
+          paths = [
+            validate
+            krecord
+            render
+          ];
+          postBuild = ''
+            mkdir --parents --verbose $out/lib/systemd/user
+            for unit in ${./units/user}/*; do
+              substitute $unit $out/lib/systemd/user/$(basename $unit) \
+                --replace-quiet \
+                  "ExecSearchPath=%h/.local/bin:%h/.nix-profile/bin:/usr/local/bin:/usr/bin" \
+                  "ExecSearchPath=$out/bin:${pkgs.python3}/bin"
+            done
+          '';
         };
         default = validate;
       });

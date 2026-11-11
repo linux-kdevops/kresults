@@ -326,6 +326,10 @@ no message has one as well, with an empty `message_id`:
 - `message_id`: the series it was applied from, whose records lie under
   `<project>/<message-id>/`; empty for a commit that came from no
   message;
+- `lists`: the series' mailing lists, the addresses of its cover
+  letter's To and Cc, or of its first patch's without one, that the
+  base's `MAINTAINERS` names on an `L:` line, lowercased and sorted;
+  empty for a commit that came from no message;
 - `ref`: the ref the run was given, such as `xfs-fix`, `for-next` or
   `v7.3`; empty for a series taken by its Message-ID;
 - `trees`: the public trees with a branch that holds the commit, the
@@ -349,8 +353,8 @@ them from the `.cmd` file kbuild writes for each object.
 A series' own records lie under its Message-ID: `b4/mbox.json` for
 fetching the message posted, `b4/mbox.mbx` for the message saved, and
 `b4/shazam.json` for applying the series, its output what b4 printed.
-A reader takes the series' subject, author, date and lists from
-`mbox.mbx`. A series that does not apply has these records alone.
+A reader takes the series' subject, author and date from `mbox.mbx`. A
+series that does not apply has these records alone.
 
 ## Versions
 
@@ -416,6 +420,39 @@ whose `--config` file is missing, or that a signal ended.
 
 `krecord` needs Python 3.11 or later, Git, and a journal kept on disk,
 which is what gives each user a journal of their own.
+
+## Reading
+
+`format/render.py` writes a tree of records as a static site, plain HTML
+and CSS that reads the same with no script:
+
+```shell
+nix run .#render -- --records ../records --output public
+format/render.py --records ../records --output public
+```
+
+A series is set against its base, and its pages show where the two
+differ. A base's pages show each record whole, with its verdict, time,
+machine and what the run took. Rendering again into the same `--output`
+replaces the site. It needs Python 3.13 or later and Git.
+
+Three [systemd] user units in `units/user/` keep a site of a tree current and
+serve it on 127.0.0.1, port 8002. They run `krender`, which is
+`format/render.py` under that name in `~/.local/bin`. Link them once, then
+enable the one that serves, named for the tree:
+
+```shell
+ln --symbolic "$PWD/format/render.py" ~/.local/bin/krender
+systemctl --user link "$PWD"/units/user/kresults-*
+systemctl --user enable --now \
+    "kresults-serve@$(systemd-escape --path ~/records).service"
+```
+
+The site is under `~/.cache/kresults`. A path unit starts the render
+whenever the top of the tree changes. inotify reports nothing from below
+a directory, so `krecord` touches the top of the tree after it writes,
+and a producer that writes records itself does the same. A drop-in for
+`kresults-serve@.service` sets another `PORT`.
 
 [jsonschema]: https://python-jsonschema.readthedocs.io/
 [PEP 723]: https://peps.python.org/pep-0723/

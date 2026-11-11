@@ -24,6 +24,7 @@ lasts goes to `designs/` before the work ends.
 
 - `format/README.md`: the format.
 - `designs/format.md`: the decisions on it, taken and open.
+- `designs/site.md`: the decisions on the site `format/render.py` writes.
 - [designs/writing.md] of kdevops-ng: how commits, docs and comments are
   written here too.
 

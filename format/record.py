@@ -65,6 +65,39 @@ RESOURCES = {
     },
     "tasks": {"peak": ("pids.peak", ONLY)},
 }
+# The names kbuild takes as ARCH: each directory of arch/, then each name its
+# top Makefile maps to one.
+ARCHES = frozenset(
+    {
+        "alpha",
+        "arc",
+        "arm",
+        "arm64",
+        "csky",
+        "hexagon",
+        "loongarch",
+        "m68k",
+        "microblaze",
+        "mips",
+        "nios2",
+        "openrisc",
+        "parisc",
+        "powerpc",
+        "riscv",
+        "s390",
+        "sh",
+        "sparc",
+        "um",
+        "x86",
+        "xtensa",
+        "i386",
+        "parisc64",
+        "sparc32",
+        "sparc64",
+        "x86_64",
+    }
+)
+COMPILERS = frozenset({"clang", "gcc"})
 # What moves from one run of a command to the next, dropped from a line before
 # two outputs are compared (README.md, "Output"): a kernel log's time stamp, a
 # code address, and the time diff prints after a file's name.
@@ -86,12 +119,14 @@ def need(holds: object, why: str) -> None:
         raise NoRecordError(why)
 
 
+def unmoved(line: str) -> str:
+    """Return a line of an output less what moves from one run to the next."""
+    return DIFF_TIME.sub(r"\1", ADDRESS.sub("", STAMP.sub("", line)))
+
+
 def lines(output: str) -> list[str]:
     """Return an output's lines in a fixed order, less what moves between runs."""
-    return sorted(
-        DIFF_TIME.sub(r"\1", ADDRESS.sub("", STAMP.sub("", line)))
-        for line in output.splitlines()
-    )
+    return sorted(map(unmoved, output.splitlines()))
 
 
 def run_of(entry: Mapping[str, object]) -> str:
@@ -290,7 +325,7 @@ def file_run(args: argparse.Namespace) -> None:
         # A commit that came from no message is its own base.
         series = {"schema": 1, "commit": commit, "message_id": "", "ref": ""}
         series |= {"trees": [], "base": commit, "base_name": name, "base_trees": []}
-        series |= {"commits": [], "sources": [], "docs": [], "added": []}
+        series |= {"commits": [], "sources": [], "docs": [], "added": [], "lists": []}
         write(directory / "series.json", series)
     # A path unit on the tree's top sees no write below it: mark the change.
     os.utime(args.records)

@@ -1,0 +1,40 @@
+24 warnings generated.
+../drivers/nvme/host/core.c:441:36: error: Access to field 'head' results in a dereference of a null pointer (loaded from variable 'ns') [clang-analyzer-core.NullDereference,-warnings-as-errors]
+  441 |                 req->__sector = nvme_lba_to_sect(ns->head,
+      |                                                  ^
+../drivers/nvme/host/core.c:789:6: note: Assuming 'state' is equal to NVME_CTRL_DELETING_NOIO
+  789 |         if (state != NVME_CTRL_DELETING_NOIO &&
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+../drivers/nvme/host/core.c:696:18: error: Out of bound access to memory preceding the field 'ref' [clang-analyzer-security.ArrayBound,-warnings-as-errors]
+  696 |         ida_free(&head->subsys->ns_ida, head->instance);
+      |                         ^
+../drivers/nvme/host/core.c:3907:6: note: Assuming the condition is false
+ 3907 |         if (dev->parent->class == &nvme_class)
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+../drivers/nvme/host/core.c:722:15: error: Out of bound access to memory preceding the field 'kref' [clang-analyzer-security.ArrayBound,-warnings-as-errors]
+  722 |         put_disk(ns->disk);
+      |                      ^
+../drivers/nvme/host/core.c:3955:2: note: Calling 'nvme_ns_release'
+ 3955 |         nvme_ns_release(container_of(inode->i_cdev, struct nvme_ns, cdev));
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+../drivers/nvme/host/core.c:3196:20: error: Out of bound access to memory preceding the field 'ref' [clang-analyzer-security.ArrayBound,-warnings-as-errors]
+ 3196 |         list_del(&subsys->entry);
+      |                           ^
+../drivers/nvme/host/core.c:5158:6: note: Assuming field 'admin_q' is non-null
+ 5158 |         if (ctrl->admin_q)
+      |             ^~~~~~~~~~~~~
+../drivers/nvme/host/nvme.h:597:46: error: Access to field 'disk' results in a dereference of a null pointer (loaded from variable 'head') [clang-analyzer-core.NullDereference,-warnings-as-errors]
+  597 |         return IS_ENABLED(CONFIG_NVME_MULTIPATH) && head->disk;
+      |                                                     ^
+../drivers/nvme/host/core.c:4496:2: note: Calling 'nvme_scan_ns'
+ 4496 |         nvme_scan_ns(scan_info->ctrl, nsid);
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+../drivers/nvme/host/nvme.h:1089:28: error: Access to field 'head' results in a dereference of a null pointer (loaded from variable 'ns') [clang-analyzer-core.NullDereference,-warnings-as-errors]
+ 1089 |                 trace_block_bio_complete(ns->head->disk->queue, req->bio);
+      |                                          ^
+../drivers/nvme/host/core.c:789:6: note: Assuming 'state' is equal to NVME_CTRL_DELETING_NOIO
+  789 |         if (state != NVME_CTRL_DELETING_NOIO &&
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Suppressed 18 warnings (18 in non-user code).
+Use -header-filter=.* to display errors from all non-system headers. Use -system-headers to display errors from system headers as well.
+6 warnings treated as errors
