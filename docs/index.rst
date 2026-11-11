@@ -10,8 +10,8 @@ kresults
    :end-before: <!-- docs/index.rst includes
 
 :src:`krecord <format/record.py>` files one run of a command,
-:src:`validate <format/validate.py>` checks a tree of records, and
-:src:`krender <format/render.py>` writes one as a static site.
+:src:`validate <format/validate.py>` checks a tree of :term:`records <Record>`,
+and :src:`krender <format/render.py>` writes one as a static site.
 :doc:`deploy` sets each up.
 
 Community
@@ -27,5 +27,6 @@ Community
 
    format
    versions
+   terms
    deploy
    contributing

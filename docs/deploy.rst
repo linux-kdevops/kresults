@@ -24,15 +24,15 @@ With `Nix`_, the flake installs all three and the units:
 Writing records
 ===============
 
-Name your lab once, in lowercase letters, digits and ``-``:
+Name your :term:`lab <Lab>` once, in lowercase letters, digits and ``-``:
 
 .. code-block:: console
 
    $ git config --global kresults.origin my-lab
 
-``krecord`` files a record of one run of a command. Run the command as a
-transient `systemd`_ user unit, in the tree, and name ``krecord`` as the
-unit's ``ExecStopPost=``:
+``krecord`` files a :term:`record <Record>` of one run of a command. Run
+the command as a transient `systemd`_ user unit, in the tree, and name
+``krecord`` as the unit's ``ExecStopPost=``:
 
 .. code-block:: text
 
@@ -79,9 +79,9 @@ Checking records
    $ nix run .#validate -- --records ~/.local/state/krecords
 
 ``validate`` prints each file that breaks the format, and why, and exits 1
-if any does. It refuses a version it does not know. A producer complies
-with a version of the format when ``validate`` accepts every file it
-writes.
+if any does. It refuses a version it does not know. A
+:term:`producer <Producer>` complies with a version of the format when
+``validate`` accepts every file it writes.
 
 Reading records
 ===============

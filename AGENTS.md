@@ -12,8 +12,8 @@ github.com/linux-kdevops/kresults.
 - `format/` is for whoever writes or reads records: the format, each
   fact once, and the JSON Schemas that define its fields.
 - `docs/` is the documentation for whoever uses kresults: the format and
-  its versions as `format/` has them, and how to deploy the programs and
-  the units. No decision or rule for a change goes there.
+  its versions as `format/` has them, the terminology, and how to deploy
+  the programs and the units. No decision or rule for a change goes there.
 - `units/user/` holds the systemd user units, written as systemd's own
   are: a capitalised `Description=` that names the unit, and a
   `Documentation=`.
@@ -32,6 +32,8 @@ lasts goes to `designs/` before the work ends.
 - `designs/format.md`: the decisions on it, taken and open.
 - `designs/site.md`: the decisions on the site `format/render.py` writes.
 - `designs/writing.md`: how commits, docs and comments are written.
+- `docs/terms.rst`: the glossary. Use its terms, and none of the words it
+  lists to avoid.
 
 ## The format
 
