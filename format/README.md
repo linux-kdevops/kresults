@@ -360,5 +360,41 @@ The script's header declares both for a tool that reads [PEP 723].
 A producer complies with a version of the format when `validate` accepts
 every file it writes.
 
+## Writing
+
+`krecord` files one run of a command as a record. It is `format/record.py`
+under that name on `PATH`, and `nix build .#krecord` builds it. A producer
+runs the command as a transient [systemd] user unit, in the tree, and
+names `krecord` as the unit's `ExecStopPost=`:
+
+```shell
+systemd-run --user --wait --collect --verbose --setenv=PATH \
+    --working-directory="$PWD" \
+    --property=ExecStopPost='-env krecord --records ../records
+        --output make/all.json --command make
+        --config build/.config --configuration tinyconfig
+        --priority warning
+        --tool make --tool gcc --env ARCH --env LLVM
+        --producer by-hand --producer-version 1 --run manual' \
+    systemd-cat --stderr-priority=warning make O=build
+```
+
+systemd starts `krecord` as the command exits, pass or fail, and gives it
+the exit status. `krecord` reads what the unit printed from the user's
+journal, with `journalctl --user`, and the commit, the `.config` and the
+tools' builds from the tree and the host. `systemd-cat` logs make's
+standard error as warnings and `--priority warning` keeps only those, so
+the journal has make's progress and the record does not. Without
+`--priority` a record holds every line the unit logged.
+
+A run the format cannot file leaves no record: `krecord` says why in one
+line and exits 0. That is a run with no lab named
+(`git config --global kresults.origin NAME`), outside a Git work tree,
+whose `--config` file is missing, or that a signal ended.
+
+`krecord` needs Python 3.11 or later, Git, and a journal kept on disk,
+which is what gives each user a journal of their own.
+
 [jsonschema]: https://python-jsonschema.readthedocs.io/
 [PEP 723]: https://peps.python.org/pep-0723/
+[systemd]: https://systemd.io

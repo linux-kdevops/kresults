@@ -23,6 +23,7 @@ from typing import Any, NotRequired, TypedDict, cast
 
 from jsonschema import Draft7Validator, ValidationError, validators
 from jsonschema.protocols import Validator
+from record import run_of
 
 # The fields the checks read, which a file has once its schema passes it.
 
@@ -113,12 +114,6 @@ HASH = re.compile(r"(?:.+-\d+-g)?([0-9a-f]{12,})")
 # A home directory where a path starts, or right after an option as in
 # -I/home/x. Inside a longer path, home is a directory of the tree.
 HOME = re.compile(r"(?<![\w.~])(?:-\w+)?/(?:home|Users)/[^/\s]")
-# What moves from one run of a command to the next, dropped from a line before
-# two outputs are compared (README.md, "Output"): a kernel log's time stamp, a
-# code address, and the time diff prints after a file's name.
-STAMP = re.compile(r"^\[ *\d+\.\d+\]")
-ADDRESS = re.compile(r"0x[0-9a-fA-F]{6,}")
-DIFF_TIME = re.compile(r"^((?:---|\+\+\+) [^\t]*)\t.*")
 
 
 def match_pattern(
@@ -246,20 +241,6 @@ def command_of(place: Place, level: str) -> Command | None:
     path = "/".join(place.below)
     found = (c for names, c in RECORDS if c["under"] == level and names.fullmatch(path))
     return next(found, None)
-
-
-def lines(output: str) -> list[str]:
-    """Return an output's lines in a fixed order, less what moves between runs."""
-    return sorted(
-        DIFF_TIME.sub(r"\1", ADDRESS.sub("", STAMP.sub("", line)))
-        for line in output.splitlines()
-    )
-
-
-def run_of(entry: Entry) -> str:
-    """Return what is equal in two entries of one run: all but who ran it."""
-    output = lines(entry.get("output", ""))
-    return json.dumps({**entry, "output": output, "invocations": []}, sort_keys=True)
 
 
 def ran_in(env: dict[str, str], arch: str, compiler: str) -> bool:

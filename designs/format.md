@@ -74,3 +74,10 @@ the version (`format/CHANGES.md`).
 2. A `-dirty` directory against its commit. `validate` holds a directory
    named by a hash to `subject.commit`, and does not read the hash in a
    name that ends in `-dirty`.
+3. Which compiler `krecord` names. The format says `clang` when `LLVM` is
+   set. `krecord` reads `CONFIG_CC_IS_CLANG` of the `.config`, which also
+   holds for a build made with `CC=clang`.
+4. `krecord` and `commands.json`. `krecord` files any `--output` it is
+   given, and only `validate` refuses a record the list lacks. It also
+   applies the path rules to the output alone, and leaves `command` and
+   `env` as given.

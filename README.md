@@ -14,8 +14,9 @@ and what the tool printed, so a result can be set against the same run
 on another commit, whoever ran it.
 
 [format/README.md](format/README.md) is the format, and the JSON Schemas
-beside it define each field. Any producer may write records in it, and
-`nix run .#validate -- --records DIR` checks a tree of them.
+beside it define each field. Any producer may write records in it:
+`krecord` files one run of a command, and
+`nix run .#validate -- --records DIR` checks a tree of records.
 [designs/format.md](designs/format.md) holds the decisions on the format.
 
 Patches go to <kdevops@lists.linux.dev>, written as kdevops-ng's

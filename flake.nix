@@ -24,6 +24,15 @@
           runtimeInputs = [ (python pkgs) ];
           text = ''exec python3 ${./format}/validate.py "$@"'';
         };
+        # Its record names the tools it finds on the caller's PATH.
+        krecord = pkgs.writeShellApplication {
+          name = "krecord";
+          runtimeInputs = [
+            pkgs.python3
+            pkgs.git
+          ];
+          text = ''exec python3 ${./format}/record.py "$@"'';
+        };
         default = validate;
       });
 
@@ -60,7 +69,10 @@
         tests =
           pkgs.runCommand "kresults-tests"
             {
-              nativeBuildInputs = [ (python pkgs) ];
+              nativeBuildInputs = [
+                (python pkgs)
+                pkgs.git
+              ];
             }
             ''
               cd ${./.}
