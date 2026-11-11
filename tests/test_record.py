@@ -53,6 +53,49 @@ def printed(message: object) -> Json:
 
 # What systemd-cat --stderr-priority=warning files: a line of standard output,
 # one of standard error, and one the command sent at a level of its own.
+# The files of a unit's cgroup, as the kernel writes them.
+PRESSURE = "some avg10=0.00 avg60=0.00 avg300=0.00 total={}\nfull avg10=0.00 total=9\n"
+CGROUP = {
+    "cpu.stat": "usage_usec 157346\nuser_usec 136234\nsystem_usec 21111\n",
+    "cpu.pressure": PRESSURE.format(7),
+    "memory.peak": "3174400\n",
+    "memory.swap.peak": "4096\n",
+    "memory.pressure": PRESSURE.format(1500),
+    "memory.events": "low 0\nhigh 2\nmax 1\noom 0\noom_kill 3\noom_group_kill 0\n",
+    "memory.stat": "anon 4096\npgfault 90\npgmajfault 12\n",
+    "io.pressure": PRESSURE.format(2500000),
+    "io.stat": (
+        "259:0 rbytes=1 wbytes=2 rios=3 wios=4 dbytes=0 dios=0\n"
+        "8:16 rbytes=10 wbytes=20 rios=30 wios=40 dbytes=0 dios=0\n"
+    ),
+    "pids.peak": "17\n",
+}
+RESOURCES = {
+    "cpu": {
+        "seconds": 0.157,
+        "user_seconds": 0.136,
+        "system_seconds": 0.021,
+        "stalled_seconds": 0.0,
+    },
+    "memory": {
+        "peak": 3174400,
+        "swap_peak": 4096,
+        "stalled_seconds": 0.002,
+        "high_events": 2,
+        "max_events": 1,
+        "oom_kills": 3,
+        "major_faults": 12,
+    },
+    "io": {
+        "stalled_seconds": 2.5,
+        "read_bytes": 11,
+        "write_bytes": 22,
+        "read_operations": 33,
+        "write_operations": 44,
+    },
+    "tasks": {"peak": 17},
+}
+
 LEVELS = (
     printed("CC a.o") | {"PRIORITY": "6"},
     printed("a.c:1: warning") | {"PRIORITY": "4"},
@@ -84,6 +127,12 @@ class RecordTest(unittest.TestCase):
         release = self.root / "os-release"
         release.write_text('NAME="Example"\nID=debian\n')
         self.enterContext(mock.patch.object(record, "OS_RELEASE", release))
+        # The unit's cgroup, which no test has until it writes one.
+        self.cgroups = self.root / "cgroup"
+        own = self.root / "self-cgroup"
+        own.write_text("0::/user.slice/example\\x2dbuild@x.service\n")
+        self.enterContext(mock.patch.object(record, "SELF_CGROUP", own))
+        self.enterContext(mock.patch.object(record, "CGROUPS", self.cgroups))
         self.environ = {
             "PATH": f"{fakes}{os.pathsep}{os.environ['PATH']}",
             "HOME": str(self.home),
@@ -144,6 +193,14 @@ class RecordTest(unittest.TestCase):
         more = tuple(extra for extra in journal if isinstance(extra, str))
         entries = [entry for entry in journal if not isinstance(entry, str)]
         return self.file(*entries, options=(*build, *options, *more), **environ)
+
+    def cgroup(self, *but: str) -> None:
+        """Write the files of the unit's cgroup, but for some."""
+        directory = self.cgroups / "user.slice" / "example\\x2dbuild@x.service"
+        directory.mkdir(parents=True)
+        for name, text in CGROUP.items():
+            if name not in but:
+                (directory / name).write_text(text)
 
     def read(self, path: str) -> Json:
         return json.loads((self.records / path).read_text("utf-8"))
@@ -288,6 +345,24 @@ class RecordTest(unittest.TestCase):
             self.make()
         (entry,) = self.entries()
         self.assertEqual(entry["invocations"][0]["started"], "2026-01-02T03:04:06Z")
+
+    def test_what_the_kernel_counted_of_the_cgroup(self) -> None:
+        self.cgroup()
+        self.make()
+        (invocation,) = self.entries()[0]["invocations"]
+        self.assertEqual(invocation["resources"], RESOURCES)
+
+    def test_a_cgroup_without_the_io_controller(self) -> None:
+        self.cgroup("io.stat")
+        self.make()
+        (invocation,) = self.entries()[0]["invocations"]
+        only = {"io": {"stalled_seconds": 2.5}}
+        self.assertEqual(invocation["resources"], RESOURCES | only)
+
+    def test_no_resources_without_a_cgroup(self) -> None:
+        self.make()
+        (invocation,) = self.entries()[0]["invocations"]
+        self.assertNotIn("resources", invocation)
 
     def test_a_store_path_is_a_build(self) -> None:
         store = "/nix/store/" + 32 * "a" + "-example-1.0"

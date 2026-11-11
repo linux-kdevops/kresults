@@ -194,6 +194,28 @@ Each invocation carries every field:
   gives it, `cpu` as lscpu's Model name, `cpus` as nproc counts them,
   and `memory` in bytes. For a test, the machine under test.
 
+An invocation may also carry `resources`, what the run took, as the
+kernel accounts for it in the cgroup of the command. Every figure is a
+total or a peak over the whole run, and one the host cannot give is left
+out:
+
+- `cpu`: `seconds` of processor time, with `user_seconds` and
+  `system_seconds` apart, and `stalled_seconds`, how long some process
+  waited for a processor;
+- `memory`: `peak` and `swap_peak` in bytes, `stalled_seconds` waiting
+  for memory, `high_events` and `max_events`, the times the run met a
+  limit, `oom_kills`, and `major_faults`, the pages read back from disk;
+- `io`: `stalled_seconds` waiting for I/O, and `read_bytes`,
+  `write_bytes`, `read_operations` and `write_operations` where the io
+  controller is delegated to the user's service manager;
+- `tasks`: the `peak` number of processes and threads.
+
+`krecord` reads them as the command exits, from `cpu.stat`, the three
+`pressure` files, `memory.peak`, `memory.swap.peak`, `memory.events`,
+`memory.stat`, `pids.peak` and `io.stat`. Its own run is in the figures,
+some tens of milliseconds. They take no part in whether two runs are
+equal.
+
 Invocations are kept oldest first.
 
 ## Where records go

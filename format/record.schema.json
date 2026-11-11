@@ -265,6 +265,126 @@
           "type": "integer",
           "minimum": 0
         },
+        "resources": {
+          "description": "What the kernel counted of the command's processes, each value where it has one",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cpu": {
+              "description": "CPU time",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "seconds": {
+                  "description": "CPU time used, in seconds",
+                  "type": "number",
+                  "minimum": 0
+                },
+                "user_seconds": {
+                  "description": "CPU time used in user mode, in seconds",
+                  "type": "number",
+                  "minimum": 0
+                },
+                "system_seconds": {
+                  "description": "CPU time used in the kernel, in seconds",
+                  "type": "number",
+                  "minimum": 0
+                },
+                "stalled_seconds": {
+                  "description": "How long some process waited for a CPU, in seconds",
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            },
+            "memory": {
+              "description": "Memory",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "peak": {
+                  "description": "The most memory held at once, in bytes",
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "swap_peak": {
+                  "description": "The most swap held at once, in bytes",
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "stalled_seconds": {
+                  "description": "How long some process waited for memory, in seconds",
+                  "type": "number",
+                  "minimum": 0
+                },
+                "high_events": {
+                  "description": "How often memory use went over the high limit",
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "max_events": {
+                  "description": "How often memory use reached the hard limit",
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "oom_kills": {
+                  "description": "How many processes the OOM killer killed",
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "major_faults": {
+                  "description": "How many page faults read from storage",
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "io": {
+              "description": "Block I/O",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "stalled_seconds": {
+                  "description": "How long some process waited for I/O, in seconds",
+                  "type": "number",
+                  "minimum": 0
+                },
+                "read_bytes": {
+                  "description": "Bytes read, over all devices",
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "write_bytes": {
+                  "description": "Bytes written, over all devices",
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "read_operations": {
+                  "description": "Reads, over all devices",
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "write_operations": {
+                  "description": "Writes, over all devices",
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "tasks": {
+              "description": "Processes and threads",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "peak": {
+                  "description": "The most that ran at once",
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        },
         "machine": {
           "description": "The machine the command ran on; never its name",
           "type": "object",

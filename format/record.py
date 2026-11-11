@@ -34,6 +34,37 @@ type Json = dict[str, Any]
 
 OS_RELEASE = Path("/etc/os-release")
 MEMINFO = Path("/proc/meminfo")
+SELF_CGROUP = Path("/proc/self/cgroup")
+CGROUPS = Path("/sys/fs/cgroup")
+# An invocation's resources: each value by the file of the cgroup that holds
+# it and the pattern of its number there, summed over the lines that match.
+ONLY = r"^(\d+)$"
+SOME = r"^some .*\btotal=(\d+)$"
+RESOURCES = {
+    "cpu": {
+        "seconds": ("cpu.stat", r"^usage_usec (\d+)$"),
+        "user_seconds": ("cpu.stat", r"^user_usec (\d+)$"),
+        "system_seconds": ("cpu.stat", r"^system_usec (\d+)$"),
+        "stalled_seconds": ("cpu.pressure", SOME),
+    },
+    "memory": {
+        "peak": ("memory.peak", ONLY),
+        "swap_peak": ("memory.swap.peak", ONLY),
+        "stalled_seconds": ("memory.pressure", SOME),
+        "high_events": ("memory.events", r"^high (\d+)$"),
+        "max_events": ("memory.events", r"^max (\d+)$"),
+        "oom_kills": ("memory.events", r"^oom_kill (\d+)$"),
+        "major_faults": ("memory.stat", r"^pgmajfault (\d+)$"),
+    },
+    "io": {
+        "stalled_seconds": ("io.pressure", SOME),
+        "read_bytes": ("io.stat", r"\brbytes=(\d+)"),
+        "write_bytes": ("io.stat", r"\bwbytes=(\d+)"),
+        "read_operations": ("io.stat", r"\brios=(\d+)"),
+        "write_operations": ("io.stat", r"\bwios=(\d+)"),
+    },
+    "tasks": {"peak": ("pids.peak", ONLY)},
+}
 # What moves from one run of a command to the next, dropped from a line before
 # two outputs are compared (README.md, "Output"): a kernel log's time stamp, a
 # code address, and the time diff prints after a file's name.
@@ -141,8 +172,32 @@ def tool(name: str) -> Json:
     return {"name": name, "version": versions[-1] if versions else "", "build": build}
 
 
+def counted(file: Path, pattern: str) -> int | None:
+    """Return the sum of a pattern's numbers in a file, or nothing without one."""
+    try:
+        found = re.findall(pattern, file.read_text("utf-8"), re.MULTILINE)
+    except (OSError, ValueError):
+        return None
+    return sum(map(int, found)) if found else None
+
+
+def resources() -> Json:
+    """Return what the kernel counted of this process's cgroup: the unit's."""
+    own = SELF_CGROUP.read_text("utf-8") if SELF_CGROUP.is_file() else ""
+    # Without a cgroup v2 path, CGROUPS alone would be the whole machine's.
+    directory = f"{CGROUPS}{find(r'^0::(/.*)$', own)}"
+    used: Json = {}
+    for group, members in RESOURCES.items() if directory != str(CGROUPS) else ():
+        for member, (file, pattern) in members.items():
+            if (total := counted(Path(directory, file), pattern)) is not None:
+                seconds = member.endswith("seconds")
+                value = round(total / 10**6, 3) if seconds else total
+                used.setdefault(group, {})[member] = value
+    return {"resources": used} if used else {}
+
+
 def invocation(args: argparse.Namespace, lab: str, started: int) -> Json:
-    """Return who ran the command, when and where."""
+    """Return who ran the command, when and where, and what it used."""
     at = datetime.fromtimestamp(started // 10**6, UTC)
     memory = find(r"^MemTotal:\s*(\d+) kB$", MEMINFO.read_text("utf-8"))
     return {
@@ -151,6 +206,7 @@ def invocation(args: argparse.Namespace, lab: str, started: int) -> Json:
         "run": args.run,
         "started": at.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "seconds": max(0, int(time.time() - started / 10**6)),
+        **resources(),
         "machine": {
             "arch": os.uname().machine,
             "cpu": find(r"^Model name:\s*(.+)$", run("lscpu")),
