@@ -11,6 +11,12 @@ github.com/linux-kdevops/kresults.
 
 - `format/` is for whoever writes or reads records: the format, each
   fact once, and the JSON Schemas that define its fields.
+- `docs/` is the documentation for whoever uses kresults: the format and
+  its versions as `format/` has them, and how to deploy the programs and
+  the units. No decision or rule for a change goes there.
+- `units/user/` holds the systemd user units, written as systemd's own
+  are: a capitalised `Description=` that names the unit, and a
+  `Documentation=`.
 - `designs/` is for whoever changes the format, agent or person: the
   decisions, taken and open, each with what bears on it. They are written
   as how things stand, with no dates or quoted requests; the log keeps how
@@ -35,8 +41,8 @@ when a change raises its version.
 
 ## Checks
 
-`nix flake check` runs the lint (black, ruff and pyright) and the tests.
-Run it before each commit that changes `format/` or `tests/`.
+`nix flake check` runs the lint (black, ruff and pyright), the tests and
+the build of the pages. Run it before each commit.
 
 ## Commits
 

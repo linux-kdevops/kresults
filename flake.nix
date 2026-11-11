@@ -18,6 +18,16 @@
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
       # The Python of validate, whose schemas jsonschema checks.
       python = pkgs: pkgs.python3.withPackages (ps: [ ps.jsonschema ]);
+      # Sphinx with what docs/conf.py loads.
+      docsPython =
+        pkgs:
+        pkgs.python3.withPackages (ps: [
+          ps.sphinx
+          ps.sphinx-autobuild
+          ps.sphinx-copybutton
+          ps.pydata-sphinx-theme
+          ps.myst-parser
+        ]);
     in
     {
       packages = forAllSystems (pkgs: rec {
@@ -72,6 +82,8 @@
             pkgs.black
             pkgs.ruff
             pkgs.pyright
+            (docsPython pkgs)
+            pkgs.python3Packages.doc8
           ];
         };
       });
@@ -107,6 +119,21 @@
               cd ${./.}
               python3 -m unittest discover --start-directory tests
               touch $out
+            '';
+
+        # Sphinx with its warnings as errors, and the pages at 80 columns.
+        docs =
+          pkgs.runCommand "kresults-docs"
+            {
+              nativeBuildInputs = [
+                (docsPython pkgs)
+                pkgs.python3Packages.doc8
+              ];
+            }
+            ''
+              cd ${./.}
+              doc8 docs
+              sphinx-build --fail-on-warning --builder html docs $out
             '';
       });
 

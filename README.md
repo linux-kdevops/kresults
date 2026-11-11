@@ -34,14 +34,13 @@ with its results, is in [kdevops-results-archive].
 [bodnuti]: https://github.com/moto-timo/bodnuti
 [kdevops-results-archive]: https://github.com/linux-kdevops/kdevops-results-archive
 
+<!-- docs/index.rst includes the text above, from the title on. -->
+
 [format/README.md](format/README.md) is the format, and the JSON Schemas
-beside it define each field. Any producer may write records in it:
-`krecord` files one run of a command,
-`nix run .#validate -- --records DIR` checks a tree of records, and
-`nix run .#render -- --records DIR --output DIR` writes a site of them,
-which the units in `units/user/` keep current and serve.
-[designs/format.md](designs/format.md) holds the decisions on the format,
-and [designs/site.md](designs/site.md) those on the site.
+beside it define each field. [docs/](docs/index.rst) is the
+documentation: the format, its versions, and how to deploy the programs
+that file, check and render records. [designs/](designs/) holds the
+decisions on the format and the site.
 
 Patches go to <kdevops@lists.linux.dev>, written as kdevops-ng's
 [designs/writing.md] asks. `AGENTS.md` is the map for agents.

@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: copyleft-next-0.3.1
+# Read the Docs installs these, the major versions Debian testing packages.
+sphinx>=9.1,<10
+pydata-sphinx-theme>=0.16,<1
+sphinx-copybutton>=0.5,<0.6
+myst-parser>=4,<6

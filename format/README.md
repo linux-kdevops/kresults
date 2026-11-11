@@ -2,13 +2,11 @@
 
 # The records
 
-This is version 1 of the format of the records
-([CHANGES.md](CHANGES.md)), which this repository keeps on its `records`
-branch. Any producer may write them: whatever runs the tools, a CI system
-or a developer's own scripts.
-[record.schema.json](record.schema.json),
-[series.schema.json](series.schema.json) and
-[objects.schema.json](objects.schema.json) define each field.
+This is version 1 of the format of the records ([CHANGES.md]), which
+this repository keeps on its `records` branch. Any producer may write
+them: a CI system, or a developer's own scripts.
+[record.schema.json], [series.schema.json] and [objects.schema.json]
+define each field.
 
 ## What a record holds
 
@@ -302,10 +300,9 @@ linux/                                   the project
 
 ## Known commands
 
-The rules above name a record and place it, and for some commands they
-take a reading. [commands.json](commands.json) lists each command a
-producer runs, with the name of its record and whether the record lies
-under a build, the commit or a series. In a record's name, `*` stands for
+[commands.json] lists each command a producer runs, with the name of
+its record and whether the record lies under a build, the commit or a
+series. In a record's name, `*` stands for
 one name, or part of one, and `**` for a path. `validate` refuses a record
 the list lacks, so a command gets its line there before a producer files
 its record.
@@ -358,102 +355,11 @@ series that does not apply has these records alone.
 
 ## Versions
 
-Each file names the version it follows as `schema`. A change to the
-format, including a change of meaning that leaves the fields as they
-are, raises the version by one and adds an entry to
-[CHANGES.md](CHANGES.md).
+Each file names the version it follows as `schema`, one of
+[CHANGES.md].
 
-## Checking
-
-```shell
-nix run .#validate -- --records ../records
-```
-
-`validate` prints each file that breaks the format, and why, and exits 1
-if any does. It learns a version before any producer writes it, and
-refuses a version it does not know.
-
-Nix runs it with a pinned Python and [jsonschema]. A host without Nix runs
-the script itself, with Python 3.11 or later and its distribution's
-`python3-jsonschema`:
-
-```shell
-format/validate.py --records ../records
-```
-
-The script's header declares both for a tool that reads [PEP 723].
-
-A producer complies with a version of the format when `validate` accepts
-every file it writes.
-
-## Writing
-
-`krecord` files one run of a command as a record. It is `format/record.py`
-under that name on `PATH`, and `nix build .#krecord` builds it. A producer
-runs the command as a transient [systemd] user unit, in the tree, and
-names `krecord` as the unit's `ExecStopPost=`:
-
-```shell
-systemd-run --user --wait --collect --verbose --setenv=PATH \
-    --working-directory="$PWD" \
-    --property=ExecStopPost='-env krecord --records ../records
-        --output make/all.json --command make
-        --config build/.config --configuration tinyconfig
-        --priority warning
-        --tool make --tool gcc --env ARCH --env LLVM
-        --producer by-hand --producer-version 1 --run manual' \
-    systemd-cat --stderr-priority=warning make O=build
-```
-
-systemd starts `krecord` as the command exits, pass or fail, and gives it
-the exit status. `krecord` reads what the unit printed from the user's
-journal, with `journalctl --user`, and the commit, the `.config` and the
-tools' builds from the tree and the host. `systemd-cat` logs make's
-standard error as warnings and `--priority warning` keeps only those, so
-the journal has make's progress and the record does not. Without
-`--priority` a record holds every line the unit logged.
-
-A run the format cannot file leaves no record: `krecord` says why in one
-line and exits 0. That is a run with no lab named
-(`git config --global kresults.origin NAME`), outside a Git work tree,
-whose `--config` file is missing, or that a signal ended.
-
-`krecord` needs Python 3.11 or later, Git, and a journal kept on disk,
-which is what gives each user a journal of their own.
-
-## Reading
-
-`format/render.py` writes a tree of records as a static site, plain HTML
-and CSS that reads the same with no script:
-
-```shell
-nix run .#render -- --records ../records --output public
-format/render.py --records ../records --output public
-```
-
-A series is set against its base, and its pages show where the two
-differ. A base's pages show each record whole, with its verdict, time,
-machine and what the run took. Rendering again into the same `--output`
-replaces the site. It needs Python 3.13 or later and Git.
-
-Three [systemd] user units in `units/user/` keep a site of a tree current and
-serve it on 127.0.0.1, port 8002. They run `krender`, which is
-`format/render.py` under that name in `~/.local/bin`. Link them once, then
-enable the one that serves, named for the tree:
-
-```shell
-ln --symbolic "$PWD/format/render.py" ~/.local/bin/krender
-systemctl --user link "$PWD"/units/user/kresults-*
-systemctl --user enable --now \
-    "kresults-serve@$(systemd-escape --path ~/records).service"
-```
-
-The site is under `~/.cache/kresults`. A path unit starts the render
-whenever the top of the tree changes. inotify reports nothing from below
-a directory, so `krecord` touches the top of the tree after it writes,
-and a producer that writes records itself does the same. A drop-in for
-`kresults-serve@.service` sets another `PORT`.
-
-[jsonschema]: https://python-jsonschema.readthedocs.io/
-[PEP 723]: https://peps.python.org/pep-0723/
-[systemd]: https://systemd.io
+[CHANGES.md]: https://github.com/linux-kdevops/kresults/blob/main/format/CHANGES.md
+[commands.json]: https://github.com/linux-kdevops/kresults/blob/main/format/commands.json
+[objects.schema.json]: https://github.com/linux-kdevops/kresults/blob/main/format/objects.schema.json
+[record.schema.json]: https://github.com/linux-kdevops/kresults/blob/main/format/record.schema.json
+[series.schema.json]: https://github.com/linux-kdevops/kresults/blob/main/format/series.schema.json

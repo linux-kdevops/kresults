@@ -9,6 +9,6 @@ removed, and what a reader of the version before must do.
 
 ## 1
 
-The first version ([README.md](README.md)). A record says what tools
-reported on a subject, whatever producer ran them. It holds one entry for
-each distinct run of a command, with the invocations of who ran it.
+The first version, as [README.md] gives it.
+
+[README.md]: https://github.com/linux-kdevops/kresults/blob/main/format/README.md
