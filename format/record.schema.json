@@ -90,7 +90,7 @@
           }
         },
         "arch": {
-          "description": "kbuild's ARCH",
+          "description": "The machine the kernel built for, as the .config names it",
           "type": "string",
           "minLength": 1
         },

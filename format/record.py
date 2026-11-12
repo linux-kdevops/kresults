@@ -101,6 +101,11 @@ ARCHES = frozenset(
     }
 )
 COMPILERS = frozenset({"clang", "gcc"})
+# The machines an arch of two word sizes builds, which the .config's symbols
+# name as kbuild's UTS_MACHINE does (README.md). An arch not here builds one.
+MACHINES = {
+    "x86": (("CONFIG_X86_64=y", "x86_64"), ("CONFIG_X86_32=y", "i386")),
+}
 # What moves from one run of a command to the next, dropped from a line before
 # two outputs are compared (README.md, "Output"): a kernel log's time stamp, a
 # code address, and the time diff prints after a file's name.
@@ -396,9 +401,19 @@ def file_run(args: argparse.Namespace) -> None:
     settings = config.read_bytes() if config else b""
     if config:
         text = settings.decode(errors="replace")
-        # kbuild takes the ARCH the run set before the host's (README.md).
-        header = r"^# Linux/(\S+) .*Kernel Configuration$"
-        arch = environ.get("ARCH") or find(header, text)
+        # The .config names the machine built for: its header the arch, and,
+        # where an arch builds two word sizes, its symbols the machine, as
+        # kbuild's UTS_MACHINE does (README.md). The ARCH the run set
+        # changes neither and stays in env.
+        srcarch = find(r"^# Linux/(\S+) .*Kernel Configuration$", text)
+        arch = next(
+            (
+                machine
+                for symbol, machine in MACHINES.get(srcarch, ())
+                if find(rf"^({symbol})$", text)
+            ),
+            srcarch,
+        )
         need(arch, f"{config} names no ARCH")
         compiler = "clang" if find(r"^(CONFIG_CC_IS_CLANG=y)$", text) else "gcc"
         names = {"configuration": [configuration], "arch": arch}

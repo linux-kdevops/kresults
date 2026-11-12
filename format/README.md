@@ -264,9 +264,12 @@ qemu/                                    another project
   `/` would be two directories, and its series is not recorded.
 - A build is its configuration, kbuild's `ARCH` and the compiler, each
   a directory. The compiler is `clang` when `LLVM` is set and not empty,
-  else `gcc`. The `ARCH` is the one the run set, or with none the one
-  kbuild took for the host, which the `.config` names in its first
-  lines: `x86` on an x86_64 host. The configuration is the make target
+  else `gcc`. The `ARCH` is the machine the kernel built for, which the
+  `.config` names whatever the run set `ARCH` to: its header names the
+  arch, and an arch that builds two word sizes has its symbols name the
+  machine, as kbuild's `UTS_MACHINE` does. On x86, `CONFIG_X86_64=y`
+  names `x86_64` and `CONFIG_X86_32=y` names `i386`, so a tinyconfig on
+  an x86_64 host is `i386`. The configuration is the make target
   that wrote the `.config`, such as `tinyconfig`, or the profiles of
   fragments merged into it, one directory each, in the order of
   `LC_ALL=C sort`: `block-layer/nvm-express-driver/`. A profile is named

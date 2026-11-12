@@ -215,15 +215,16 @@ def command_of(place: Place, level: str) -> Command | None:
     return next(found, None)
 
 
-def ran_in(env: dict[str, str], arch: str, compiler: str) -> bool:
-    """Return whether an entry's ARCH and LLVM name the build it lies under.
+def ran_in(env: dict[str, str], compiler: str) -> bool:
+    """Return whether an entry's LLVM names the compiler of the build it lies under.
 
     make compiles with clang under any LLVM that is not empty, and with gcc
-    under none. An entry that sets no ARCH names no build: kbuild took the
-    host's, or the tool is not make.
+    under none. A tool that reads no LLVM names no compiler. The machine a
+    build is of comes from the .config, so the ARCH an entry sets names
+    nothing (README.md).
     """
     named = "clang" if env.get("LLVM") else "gcc"
-    return not env.get("ARCH") or (env["ARCH"], named) == (arch, compiler)
+    return not env.get("LLVM") or named == compiler
 
 
 def check_commit(place: Place, sha: str) -> Iterator[str]:
@@ -280,8 +281,8 @@ def check_entry(place: Place, entry: Entry) -> Iterator[str]:
         yield "has no config, and lies under a build"
     if not place.build and "config" in entry:
         yield "has a config, and lies under no build"
-    if place.build and not ran_in(entry["env"], *place.build[-2:]):
-        yield "sets an ARCH or LLVM its build does not name"
+    if place.build and not ran_in(entry["env"], place.build[-1]):
+        yield "sets an LLVM its build does not name"
     texts = (entry["command"], entry.get("output", ""), *entry["env"].values())
     if any(HOME.search(text) for text in texts):
         yield "names a home directory; write it as ~"

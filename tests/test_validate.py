@@ -49,7 +49,7 @@ GCC = {"ARCH": "x86_64"}
 SAME_RUN = [(SPARSE, "entry 2 is the run of entry 1; add to its invocations")]
 UNKNOWN = "is of no known command; add its line to commands.json"
 NO_PROJECT = "is of no known project; add its commands to commands.json"
-OTHER_BUILD = "entry 1 sets an ARCH or LLVM its build does not name"
+OTHER_BUILD = "entry 1 sets an LLVM its build does not name"
 
 
 def invocation() -> Json:
@@ -298,31 +298,33 @@ class Validate(unittest.TestCase):
         self.assertEqual(problems(files), [])
 
     def test_env_arch(self) -> None:
+        # The .config names the machine, so the ARCH an entry sets, of make
+        # or of any other tool, names no build.
         files = good()
         first_entry(files, SPARSE)["env"] = {"ARCH": "arm64", "LLVM": "1"}
-        self.assert_problem(files, SPARSE, "entry 1 sets an ARCH or LLVM")
+        first_entry(files, TEST)["env"] = {"ARCH": "arm64", "FSTYP": "xfs"}
+        self.assertEqual(problems(files), [])
 
     def test_env_llvm(self) -> None:
-        for path, env in ((SPARSE, GCC), (NESTED, CLANG)):
-            with self.subTest(path=path, env=env):
-                files = good()
-                first_entry(files, path)["env"] = env
-                self.assert_problem(files, path, OTHER_BUILD)
+        files = good()
+        first_entry(files, NESTED)["env"] = CLANG
+        self.assert_problem(files, NESTED, OTHER_BUILD)
+
+    def test_env_without_llvm_names_no_compiler(self) -> None:
+        files = good()
+        first_entry(files, SPARSE)["env"] = GCC
+        self.assertEqual(problems(files), [])
 
     def test_env_without_arch(self) -> None:
-        # kbuild takes the host's ARCH for a run that sets none: x86 on x86_64.
-        native = "tinyconfig/x86/gcc"
+        # A run that sets no ARCH builds as its .config says: a tinyconfig
+        # of an x86_64 host is i386.
+        native = "tinyconfig/i386/gcc"
         path = f"{COMMIT}/{native}/make/all.json"
-        for env in ({}, {"ARCH": ""}, {"LLVM": "1"}):
+        for env in ({}, {"ARCH": ""}):
             with self.subTest(env=env):
                 files = good()
                 files[path] = built(native, entry("make -s", env, config=CONFIG))
                 self.assertEqual(problems(files), [])
-
-    def test_env_arch_of_a_tool_that_is_not_make(self) -> None:
-        files = good()
-        first_entry(files, TEST)["env"] = {"ARCH": "arm64", "FSTYP": "xfs"}
-        self.assert_problem(files, TEST, OTHER_BUILD)
 
     def test_env_llvm_suffix(self) -> None:
         files = good()

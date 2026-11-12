@@ -25,9 +25,15 @@ type Json = dict[str, Any]
 UNIT = "0123456789abcdef0123456789abcdef"
 NAME = "example\\x2dbuild@x.service"
 STARTED = 1767323045
-GCC = "#\n# Linux/x86 7.3.0 Kernel Configuration\n#\nCONFIG_CC_IS_GCC=y\n"
+GCC = (
+    "#\n"
+    "# Linux/x86 7.3.0 Kernel Configuration\n"
+    "#\n"
+    "CONFIG_CC_IS_GCC=y\n"
+    "CONFIG_X86_64=y\n"
+)
 CLANG = GCC.replace("GCC", "CLANG")
-BUILD = "linux/v1.2/tinyconfig/x86/gcc"
+BUILD = "linux/v1.2/tinyconfig/x86_64/gcc"
 MAKE = f"{BUILD}/make/all.json"
 CHECKPATCH = "linux/v1.2/checkpatch.pl.json"
 # The programs record runs, but for git, as scripts at the front of PATH.
@@ -231,7 +237,7 @@ class RecordTest(unittest.TestCase):
         written = (MAKE, f"{BUILD}/config", "linux/v1.2/series.json")
         expected = "".join(f"record: {self.records / path}\n" for path in written)
         self.assertEqual(said, expected)
-        build = {"configuration": ["tinyconfig"], "arch": "x86", "compiler": "gcc"}
+        build = {"configuration": ["tinyconfig"], "arch": "x86_64", "compiler": "gcc"}
         subject = {"project": "linux", "commit": self.commit, "build": build}
         self.assertEqual(self.read(MAKE)["subject"], subject)
         (entry,) = self.entries()
@@ -343,13 +349,21 @@ class RecordTest(unittest.TestCase):
         (entry,) = self.entries()
         self.assertEqual(entry["output"], "ERROR: example\n")
 
-    def test_a_build_by_clang_for_the_arch_the_run_set(self) -> None:
+    def test_the_config_names_the_machine_not_the_run(self) -> None:
         self.config.write_text(CLANG)
         self.make(ARCH="arm64", LLVM="1")
-        entries = self.entries("linux/v1.2/tinyconfig/arm64/clang/make/all.json")
-        self.assertEqual(len(entries), 1)
+        (entry,) = self.entries("linux/v1.2/tinyconfig/x86_64/clang/make/all.json")
         tools = [tool("make", "4.4.1"), tool("clang", "19.1.7")]
-        self.assertEqual(entries[0]["tools"], tools)
+        self.assertEqual(entry["tools"], tools)
+        self.assertEqual(
+            entry["env"], {"ARCH": "arm64", "KCFLAGS": "-Wextra", "LLVM": "1"}
+        )
+
+    def test_a_config_of_the_other_word_size(self) -> None:
+        self.config.write_text(GCC.replace("CONFIG_X86_64=y", "CONFIG_X86_32=y"))
+        self.make()
+        i386 = "linux/v1.2/tinyconfig/i386/gcc/make/all.json"
+        self.assertEqual(len(self.entries(i386)), 1)
 
     def test_a_compiler_named_as_a_tool_is_there_once(self) -> None:
         self.make("--tool=gcc")
@@ -370,7 +384,7 @@ class RecordTest(unittest.TestCase):
         self.make()
         name = f"v1.2-1-g{self.git('rev-parse', 'HEAD')[:12]}-dirty"
         self.assertEqual(
-            len(self.entries(f"linux/{name}/tinyconfig/x86/gcc/make/all.json")), 1
+            len(self.entries(f"linux/{name}/tinyconfig/x86_64/gcc/make/all.json")), 1
         )
 
     def test_started_without_a_start_message(self) -> None:
@@ -546,12 +560,14 @@ class RecordTest(unittest.TestCase):
         self.assertEqual(entry["tools"], tools)
 
     def test_the_variables_of_the_first_tool_and_those_given(self) -> None:
+        # A run of LLVM=1 builds with clang: the config names the compiler.
+        self.config.write_text(CLANG)
         self.without = ("--env",)
         set_ = {"LLVM": "1", "KCFLAGS": "-O1", "EXAMPLE": "y", "ARCH": ""}
         self.make(**set_)
         self.without = ()
         self.make("--env=EXAMPLE", "--env=LLVM", **set_)
-        first, second = self.entries()
+        first, second = self.entries("linux/v1.2/tinyconfig/x86_64/clang/make/all.json")
         listed = {"LLVM": "1", "KCFLAGS": "-O1"}
         self.assertEqual(list(first["env"].items()), list(listed.items()))
         self.assertEqual(second["env"], first["env"] | {"EXAMPLE": "y"})

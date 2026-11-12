@@ -56,8 +56,8 @@ Where records lie
 .. glossary::
 
    Build
-      A :term:`configuration <Configuration>`, a kbuild ``ARCH`` and a
-      compiler, each a directory under a commit:
+      A :term:`configuration <Configuration>`, the machine the kernel
+      built for, and a compiler, each a directory under a commit:
       ``tinyconfig/x86_64/clang/``. A record lies under the build its
       command ran in.
 

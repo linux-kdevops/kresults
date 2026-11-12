@@ -51,10 +51,17 @@ the version (`format/CHANGES.md`).
 - `validate` holds every record to `commands.json`, and refuses one the
   list lacks. A table in the text alone was advice: `checkpatch.pl.json`
   under a build still passed.
-- A build made with no `ARCH` set is filed under the one kbuild took for
-  the host, which its `.config` names. The kernel picks its architecture
-  by itself, and a format that asked a developer to set it would refuse
-  the plainest build there is.
+- A build made with no `ARCH` set is filed under the machine its `.config`
+  names, like every build. The kernel picks its machine by itself, and a
+  format that asked a developer to set it would refuse the plainest build
+  there is.
+- A build's `ARCH` is the machine the kernel built for, which the `.config`
+  names whatever the run set `ARCH` to. The `.config`'s header names the
+  arch, and x86 builds two word sizes under one header: a tinyconfig is an
+  i386 kernel built on an x86_64 host, and both headers say `Linux/x86`.
+  Its symbols name the machine, as kbuild's `UTS_MACHINE` does; the `ARCH`
+  the run set stays in `env`. Other arches that build two word sizes name
+  their symbols when a producer meets them.
 - A commit that has a record holds `series.json`, which says how the
   commit came, with or without a message. A build's `config` and
   `objects.json` are not required, so a tree stays valid while a run is
