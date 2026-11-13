@@ -542,7 +542,7 @@ class Validate(unittest.TestCase):
     def test_unknown_command(self) -> None:
         for path, to in (
             (CHECKPATCH, f"{COMMIT}/checkpatch.json"),
-            (HTMLDOCS, f"{COMMIT}/make/htmldocs/filesystems/xfs.json"),
+            (HTMLDOCS, f"{COMMIT}/make/allconfig/filesystems.json"),
             (MAKE, f"{COMMIT}/{TINY}/make/modules.json"),
             (SPARSE, f"{COMMIT}/{TINY}/lint/init/main.o.json"),
             (SHAZAM, f"linux/{UNAPPLIED}/b4/am.json"),

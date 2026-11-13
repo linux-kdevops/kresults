@@ -43,6 +43,8 @@ FAKES = {
     "gcc": "echo 'gcc (Debian 14.2.0-19) 14.2.0'\n",
     "clang": "echo 'Debian clang version 19.1.7 (3+b1)'\n",
     "checkpatch.pl": "echo Version: 0.32\n",
+    "check-uapi.sh": "exit 1\n",
+    "kernel-doc": "exit 1\n",
     "dpkg-query": (
         'case "$1" in\n'
         '--search) echo "example-tools:amd64: $2" ;;\n'
@@ -383,6 +385,66 @@ class RecordTest(unittest.TestCase):
         said = self.file(options=options)
         self.assert_no_record(said, "HEAD..HEAD checks no commit")
 
+    def test_a_command_names_one_end_of_the_range_whole(self) -> None:
+        self.git("commit", "--quiet", "--allow-empty", "--message", "init: another")
+        base, tip = self.git("rev-parse", "HEAD~1"), self.git("rev-parse", "HEAD")
+        (self.tree / "build" / ".range").write_text("HEAD~1..\n")
+        options = (
+            "--command=scripts/check-uapi.sh -b HEAD -p {base}",
+            "--range-file=build/.range",
+            "--output=check-uapi.sh.json",
+        )
+        self.file(options=options)
+        path = f"linux/v1.2-1-g{tip[:12]}/check-uapi.sh.json"
+        (entry,) = self.entries(path)
+        self.assertEqual(entry["command"], f"scripts/check-uapi.sh -b HEAD -p {base}")
+        subject = {"project": "linux", "commit": tip, "range": f"{base}..{tip}"}
+        self.assertEqual(self.read(path)["subject"], subject)
+
+    def test_a_file_names_what_the_command_worked_on(self) -> None:
+        (self.tree / "build" / ".file").write_text("init/main.o\n")
+        said = self.make(
+            "--command=make C=2 CF=-Wsparse-error {file}",
+            "--file=build/.file",
+            "--output=sparse/{file}.json",
+        )
+        path = f"{BUILD}/sparse/init/main.o.json"
+        self.assertIn(f"record: {self.records / path}\n", said)
+        (entry,) = self.entries(path)
+        self.assertEqual(entry["command"], "make C=2 CF=-Wsparse-error init/main.o")
+        build = {"configuration": ["tinyconfig"], "arch": "x86_64", "compiler": "gcc"}
+        subject = {"project": "linux", "commit": self.commit, "build": build}
+        subject |= {"file": "init/main.o"}
+        self.assertEqual(self.read(path)["subject"], subject)
+
+    def test_a_record_named_for_the_builds_compiler(self) -> None:
+        (self.tree / "build" / ".file").write_text("init/main.o\n")
+        for text, compiler in ((CLANG, "clang"), (GCC, "gcc")):
+            self.config.write_text(text)
+            self.make(
+                "--command=make W=1e {file}",
+                "--file=build/.file",
+                "--output={compiler}/{file}.json",
+            )
+            build = f"linux/v1.2/tinyconfig/x86_64/{compiler}"
+            path = f"{build}/{compiler}/init/main.o.json"
+            self.assertEqual(len(self.entries(path)), 1)
+
+    def test_a_file_without_a_build(self) -> None:
+        (self.tree / "build" / ".file").write_text("init/main.c\n")
+        options = (
+            "--command=scripts/kernel-doc --none --wall --werror {file}",
+            "--file=build/.file",
+            "--output=kernel-doc/{file}.json",
+        )
+        self.file(options=options)
+        path = "linux/v1.2/kernel-doc/init/main.c.json"
+        (entry,) = self.entries(path)
+        command = "scripts/kernel-doc --none --wall --werror init/main.c"
+        self.assertEqual(entry["command"], command)
+        subject = {"project": "linux", "commit": self.commit, "file": "init/main.c"}
+        self.assertEqual(self.read(path)["subject"], subject)
+
     def test_a_line_that_is_not_utf8(self) -> None:
         self.make(printed(list(b"caf\xe9 au lait")))
         (entry,) = self.entries()
@@ -496,6 +558,22 @@ class RecordTest(unittest.TestCase):
         for code in ("killed", "dumped"):
             said = self.make(printed("Terminated"), EXIT_CODE=code, EXIT_STATUS="TERM")
             self.assert_no_record(said, "the command was stopped")
+
+    def test_no_record_with_a_file_that_names_an_absolute_path(self) -> None:
+        (self.tree / "build" / ".file").write_text("/a/b.c\n")
+        said = self.make("--file=build/.file")
+        self.assert_no_record(said, "/a/b.c is no path from the top of the tree")
+
+    def test_no_record_with_a_file_that_climbs_out_of_the_tree(self) -> None:
+        for path in ("../a/b.c", "a/./b.c", "a/b/.."):
+            (self.tree / "build" / ".file").write_text(f"{path}\n")
+            said = self.make("--file=build/.file")
+            self.assert_no_record(said, f"{path} is no path from the top of the tree")
+
+    def test_no_record_with_a_file_that_names_none(self) -> None:
+        (self.tree / "build" / ".file").write_text("\n")
+        said = self.make("--file=build/.file")
+        self.assert_no_record(said, "build/.file names no file")
 
     def test_no_record_with_a_tool_of_no_package(self) -> None:
         (self.root / "bin" / "dpkg-query").write_text("#!/bin/sh\nexit 1\n")

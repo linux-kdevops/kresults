@@ -54,7 +54,7 @@
           "$ref": "#/definitions/build"
         },
         "file": {
-          "description": "The file or object the tool checked, from the top of the tree; absent for a check of the whole tree",
+          "description": "The file, object or name the tool worked on, as the command names it; absent for a tool that worked on the whole tree",
           "$ref": "#/definitions/relative"
         },
         "test": {

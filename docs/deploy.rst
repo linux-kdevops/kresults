@@ -66,7 +66,10 @@ as a drop-in is, names its version by ``--producer-tree``, a directory
 whose Git tree describes the producer.
 ``--configuration-file`` names a file another command left in the build,
 and ``{configuration}`` in ``--output`` and ``--command`` stands for what
-it holds.
+it holds. So do ``--range-file``, whose ``{range}`` and ``{base}`` name
+the commits a tool read, and ``--file``, whose ``{file}`` names the file
+it worked on; ``{compiler}``, in ``--output`` alone, names the build's
+compiler.
 
 A run the format cannot file leaves no record: ``krecord`` says why in one
 line and exits 0. That is a run with no lab named, outside a Git work

@@ -25,7 +25,8 @@ names it, with the lab, the run, the time and the machine.
 `subject` names the project and the whole commit, then what narrows it:
 
 - `build`, for a command that ran in one (below);
-- `file`, a file or an object, from the top of the tree;
+- `file`, a file, an object or a name, as the command names it, for a
+  tool that worked on it alone;
 - `test`, a test as its suite names it, such as `generic/001`;
 - `range`, `BASE..COMMIT` with both whole, for a tool that read the
   commits as patches.
@@ -114,7 +115,9 @@ relative to it: `make -s C=2 CF=-Wsparse-error init/main.o`. It leaves
 out the options that only place files, such as make's `-C` and `O=`,
 and the variables in `env`. Where the command read a range of commits,
 it names the range whole, as `git rev-parse` resolves its ends: the same
-commits, wherever `HEAD` has moved. `env` holds each environment
+commits, wherever `HEAD` has moved. One that takes one end of the range
+by itself names that commit whole too, as `scripts/check-uapi.sh -b
+HEAD -p BASE` names the base. `env` holds each environment
 variable that changes what the command reports, as it was set. Running
 `command` with `env`'s variables, at the top of a tree at the same
 commit and build, repeats the run.
@@ -268,7 +271,9 @@ qemu/                                    another project
   `/` would be two directories, and its series is not recorded.
 - A build is its configuration, kbuild's `ARCH` and the compiler, each
   a directory. The compiler is `clang` when `LLVM` is set and not empty,
-  else `gcc`. The `ARCH` is the machine the kernel built for, which the
+  else `gcc`. A record's name may name the compiler of its build as
+  well, as `W=1e`'s does; a producer reads it from the `.config`. The
+  `ARCH` is the machine the kernel built for, which the
   `.config` names whatever the run set `ARCH` to: its header names the
   arch, and an arch that builds two word sizes has its symbols name the
   machine, as kbuild's `UTS_MACHINE` does. On x86, `CONFIG_X86_64=y`

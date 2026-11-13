@@ -84,6 +84,16 @@ the version (`format/CHANGES.md`).
   commit, with no `-dirty`: the tool read the commits, not the working
   tree. The range as typed, `HEAD~3..`, would name other commits once
   HEAD moves.
+- A run that worked one file gives it in a file as well. The record
+  holds it in `subject.file`, and `{file}` fills it in the command and
+  the record's name, so a producer gives krecord one line for every
+  file it checks.
+- A record's name may name the compiler, filled from the `.config`.
+  `W=1e` keeps the runs of two compilers apart, and a producer that
+  named neither would write its line once per compiler.
+- A command that takes one end of the range by itself names that commit
+  whole, as the range names both. `scripts/check-uapi.sh` reads the base
+  apart from the tip, and `{base}` fills the range's first commit.
 
 ## Open
 

@@ -39,6 +39,16 @@
           "under": "build"
         },
         {
+          "command": "make rustdoc",
+          "record": "make/rustdoc.json",
+          "under": "build"
+        },
+        {
+          "command": "make rustavailable",
+          "record": "make/rustavailable.json",
+          "under": "commit"
+        },
+        {
           "command": "make W=1e OBJ, compiled by clang",
           "record": "clang/**.json",
           "under": "build"
@@ -49,19 +59,54 @@
           "under": "build"
         },
         {
-          "command": "make C=2 OBJ",
+          "command": "make C=2 CF=-Wsparse-error OBJ",
           "record": "sparse/**.json",
           "under": "build"
         },
         {
-          "command": "make C=2 CHECK=smatch OBJ",
+          "command": "make C=2 CHECK=\"smatch --project=kernel --fatal-checks\" OBJ",
           "record": "smatch/**.json",
           "under": "build"
         },
         {
-          "command": "make C=2 CHECK=scripts/coccicheck OBJ",
+          "command": "make C=2 CHECK='$(srctree)/scripts/coccicheck' OBJ",
           "record": "coccicheck/**.json",
           "under": "build"
+        },
+        {
+          "command": "make clang-tidy",
+          "record": "make/clang-tidy.json",
+          "under": "build"
+        },
+        {
+          "command": "make clang-analyzer",
+          "record": "make/clang-analyzer.json",
+          "under": "build"
+        },
+        {
+          "command": "make CLIPPY=1",
+          "record": "make/clippy.json",
+          "under": "build"
+        },
+        {
+          "command": "make HEADER_CHECK=FILE headercheck",
+          "record": "headercheck/**.json",
+          "under": "build"
+        },
+        {
+          "command": "make kconfig-sym-check",
+          "record": "make/kconfig-sym-check.json",
+          "under": "commit"
+        },
+        {
+          "command": "make refcheckdocs",
+          "record": "make/refcheckdocs.json",
+          "under": "commit"
+        },
+        {
+          "command": "make testdocs",
+          "record": "make/testdocs.json",
+          "under": "commit"
         },
         {
           "command": "clang-tidy FILE",
@@ -94,8 +139,28 @@
           "under": "commit"
         },
         {
-          "command": "make SPHINXDIRS=DIR htmldocs",
-          "record": "make/htmldocs/*.json",
+          "command": "scripts/checkversion.pl FILE",
+          "record": "checkversion.pl/**.json",
+          "under": "commit"
+        },
+        {
+          "command": "scripts/headerdep.pl -I include FILE",
+          "record": "headerdep.pl/**.json",
+          "under": "commit"
+        },
+        {
+          "command": "scripts/check-uapi.sh -b HEAD -p BASE",
+          "record": "check-uapi.sh.json",
+          "under": "commit"
+        },
+        {
+          "command": "scripts/checkkconfigsymbols.py",
+          "record": "checkkconfigsymbols.py.json",
+          "under": "commit"
+        },
+        {
+          "command": "make SPHINXDIRS=DIR SPHINXOPTS=--fresh-env htmldocs",
+          "record": "make/htmldocs/**.json",
           "under": "commit"
         },
         {

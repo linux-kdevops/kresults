@@ -178,15 +178,28 @@ def configuration_of(args: argparse.Namespace) -> str | None:
     return name
 
 
-def named(text: str, configuration: str | None, range_: str | None = None) -> str:
+def named(
+    text: str,
+    configuration: str | None,
+    range_: str | None = None,
+    file_: str | None = None,
+    compiler: str | None = None,
+) -> str:
     """Return a text with its placeholders filled.
 
-    {configuration} takes the configuration's name, and {range} the range.
+    {configuration} takes the configuration's name, {range} the range,
+    {base} its first commit, {file} the file the command worked on and
+    {compiler} the build's compiler.
     """
     if configuration:
         text = text.replace("{configuration}", configuration)
     if range_:
-        text = text.replace("{range}", range_)
+        base = range_.partition("..")[0]
+        text = text.replace("{range}", range_).replace("{base}", base)
+    if file_:
+        text = text.replace("{file}", file_)
+    if compiler:
+        text = text.replace("{compiler}", compiler)
     return text
 
 
@@ -212,7 +225,34 @@ def range_of(args: argparse.Namespace) -> str | None:
     return f"{whole[0]}..{whole[1]}"
 
 
-def placed(checked: str | None, commit: str, project: str) -> tuple[Json, str]:
+def file_of(args: argparse.Namespace) -> str | None:
+    """Return what the command worked on, as the command names it.
+
+    Nothing without --file. The file holds the name as the task took it,
+    one line: a file or an object, a path from the top of the tree, or a
+    name a command of make's takes, as SPHINXDIRS.
+    """
+    if args.file is None:
+        return None
+    need(args.file.is_file(), f"{args.file} does not exist")
+    path = args.file.read_text("utf-8").partition("\n")[0].strip()
+    need(path, f"{args.file} names no file")
+    need(not path.startswith("/"), f"{path} is no path from the top of the tree")
+    # The schema allows no . or .. in it either: one would name a file
+    # outside the tree, or the tree's own directory.
+    need(
+        not re.search(r"(^|/)\.\.?(/|$)", path),
+        f"{path} is no path from the top of the tree",
+    )
+    return path
+
+
+def placed(
+    checked: str | None,
+    commit: str,
+    project: str,
+    file_: str | None = None,
+) -> tuple[Json, str]:
     """Return the subject of a record and the name of its directory.
 
     A tool that read a range read the commits, not the working tree: the
@@ -224,10 +264,13 @@ def placed(checked: str | None, commit: str, project: str) -> tuple[Json, str]:
     if checked:
         tip = checked.partition("..")[2]
         subject: Json = {"project": project, "commit": tip, "range": checked}
-        return subject, run("git", "describe", *describe, tip)
-    return {"project": project, "commit": commit}, run(
-        "git", "describe", *describe, "--dirty"
-    )
+        name = run("git", "describe", *describe, tip)
+    else:
+        subject = {"project": project, "commit": commit}
+        name = run("git", "describe", *describe, "--dirty")
+    if file_:
+        subject["file"] = file_
+    return subject, name
 
 
 @functools.cache
@@ -399,6 +442,16 @@ def invocation(args: argparse.Namespace, lab: str, started: int) -> Json:
     }
 
 
+def output_of(printed: Sequence[str], top: str) -> str:
+    """Return what a run printed, with no path of the host in it.
+
+    The records may be public: paths lie in the tree, and home is ~.
+    """
+    output = "\n".join(printed).replace(f"{top}/", "")
+    home = re.escape(str(Path.home())) + r"(?![\w.-])"
+    return re.sub(home, "~", output) + "\n"
+
+
 def write(file: Path, data: Json | bytes) -> None:
     """Write a file whole, so that no reader finds part of it, and print its name."""
     if not isinstance(data, bytes):
@@ -439,12 +492,14 @@ def file_run(args: argparse.Namespace) -> None:
     need(environ.get("EXIT_CODE") == "exited", "the command was stopped")
     configuration = configuration_of(args)
     checked = range_of(args)
+    worked = file_of(args)
     if args.producer_tree:
         args.producer_version = version_of(args.producer_tree)
-    subject, name = placed(checked, commit, args.project)
+    subject, name = placed(checked, commit, args.project, worked)
     directory = build = args.records / args.project / name
-    entry = ran(args, named(args.command, configuration, checked), top)
+    entry = ran(args, named(args.command, configuration, checked, worked), top)
     settings = config.read_bytes() if config else b""
+    compiler = ""
     if config:
         text = settings.decode(errors="replace")
         # The .config names the machine built for: its header the arch, and,
@@ -472,13 +527,10 @@ def file_run(args: argparse.Namespace) -> None:
     status = int(environ.get("EXIT_STATUS", "0"))
     entry |= {"status": "fail" if status else "pass", "exit": status}
     if printed:
-        # The records may be public: paths lie in the tree, and home is ~.
-        output = "\n".join(printed).replace(f"{top}/", "")
-        home = re.escape(str(Path.home())) + r"(?![\w.-])"
-        entry["output"] = re.sub(home, "~", output) + "\n"
+        entry["output"] = output_of(printed, top)
     entry["invocations"] = [invocation(args, lab, started)]
     # Without a name given, commands.json names the record of the command.
-    given = named(args.output or "", configuration)
+    given = named(args.output or "", configuration, checked, worked, compiler)
     filed = build / (given or record_of(entry["command"], args.project))
     write(filed, merged(filed, subject, entry))
     if config:
@@ -513,6 +565,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     name.add_argument("--configuration", metavar="NAME")
     name.add_argument("--configuration-file", type=Path, metavar="FILE")
     parser.add_argument("--range-file", type=Path, metavar="FILE")
+    parser.add_argument("--file", type=Path, metavar="FILE")
     parser.add_argument("--tool", action="append", default=[], metavar="NAME")
     parser.add_argument("--env", action="append", default=[], metavar="VAR")
     parser.add_argument("--priority", choices=PRIORITIES, metavar="LEVEL")
