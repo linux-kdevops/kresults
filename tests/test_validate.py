@@ -560,8 +560,8 @@ class Validate(unittest.TestCase):
         files[f"qemu/{TIP}/make/all.json"] = record(commit, entry("make", GCC))
         self.assertEqual(problems(files), [])
         # Each project has its own commands.
-        path = f"qemu/{TIP}/checkpatch.pl.json"
-        files[path] = record(commit, entry("scripts/checkpatch.pl"))
+        path = f"qemu/{TIP}/sparse/init/main.o.json"
+        files[path] = record(commit, entry("make -s C=2 init/main.o"))
         self.assertEqual(problems(files), [(path, UNKNOWN)])
 
     def test_unknown_project(self) -> None:

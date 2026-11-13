@@ -121,6 +121,11 @@
       },
       "commands": [
         {
+          "command": "scripts/checkpatch.pl --branch RANGE",
+          "record": "checkpatch.pl.json",
+          "under": "commit"
+        },
+        {
           "command": "configure --target-list=LIST",
           "argv": "configure --target-list=*",
           "record": "configure.json",

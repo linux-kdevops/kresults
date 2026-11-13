@@ -78,6 +78,12 @@ the version (`format/CHANGES.md`).
   sashiko's, under Apache-2.0. Each project names its own lists, QEMU's
   as well. A series that did not apply has no `series.json`, and so no
   lists.
+- A run that read commits as patches gives its range in a file, as a
+  run that configures gives its name in one. The record holds the range
+  whole, in `subject.range` and in the command, and lies under its last
+  commit, with no `-dirty`: the tool read the commits, not the working
+  tree. The range as typed, `HEAD~3..`, would name other commits once
+  HEAD moves.
 
 ## Open
 

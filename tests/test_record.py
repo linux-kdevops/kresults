@@ -319,6 +319,70 @@ class RecordTest(unittest.TestCase):
         self.assertEqual(self.read(CHECKPATCH)["subject"], subject)
         self.assertFalse((self.records / BUILD).exists())
 
+    def test_a_range_names_the_commits_checked(self) -> None:
+        self.git("commit", "--quiet", "--allow-empty", "--message", "init: another")
+        base, tip = self.git("rev-parse", "HEAD~1"), self.git("rev-parse", "HEAD")
+        (self.tree / "build" / ".range").write_text("HEAD~1..\n")
+        options = (
+            "--command=scripts/checkpatch.pl --strict --git {range}",
+            "--range-file=build/.range",
+            "--output=checkpatch.pl.json",
+        )
+        self.file(printed("ERROR: trailing whitespace"), options=options)
+        name = f"v1.2-1-g{tip[:12]}"
+        path = f"linux/{name}/checkpatch.pl.json"
+        (entry,) = self.entries(path)
+        command = f"scripts/checkpatch.pl --strict --git {base}..{tip}"
+        self.assertEqual(entry["command"], command)
+        self.assertEqual(entry["output"], "ERROR: trailing whitespace\n")
+        subject = {"project": "linux", "commit": tip, "range": f"{base}..{tip}"}
+        self.assertEqual(self.read(path)["subject"], subject)
+
+    def test_one_commit_in_a_range_file_is_its_patch(self) -> None:
+        self.git("commit", "--quiet", "--allow-empty", "--message", "init: another")
+        base, tip = self.git("rev-parse", "HEAD~1"), self.git("rev-parse", "HEAD")
+        (self.tree / "build" / ".range").write_text("HEAD\n")
+        options = (
+            "--command=scripts/checkpatch.pl --branch {range}",
+            "--range-file=build/.range",
+            "--output=checkpatch.pl.json",
+            "--project=qemu",
+        )
+        self.file(options=options)
+        path = f"qemu/v1.2-1-g{tip[:12]}/checkpatch.pl.json"
+        self.entries(path)
+        subject = {"project": "qemu", "commit": tip, "range": f"{base}..{tip}"}
+        self.assertEqual(self.read(path)["subject"], subject)
+
+    def test_a_range_is_filed_under_its_last_commit_not_the_dirty_tree(self) -> None:
+        for message in ("init: another", "init: one more"):
+            self.git("commit", "--quiet", "--allow-empty", "--message", message)
+        (self.tree / "Makefile").write_text("all:\n")
+        self.git("add", "Makefile")
+        (self.tree / "build" / ".range").write_text("HEAD~2..HEAD~1\n")
+        options = (
+            "--command=scripts/checkpatch.pl --git {range}",
+            "--range-file=build/.range",
+            "--output=checkpatch.pl.json",
+        )
+        self.file(options=options)
+        tip = self.git("rev-parse", "HEAD~1")
+        path = f"linux/v1.2-1-g{tip[:12]}/checkpatch.pl.json"
+        self.entries(path)
+        subject = {"project": "linux", "commit": tip}
+        subject |= {"range": f"{self.commit}..{tip}"}
+        self.assertEqual(self.read(path)["subject"], subject)
+
+    def test_a_range_of_one_commit_twice_leaves_no_record(self) -> None:
+        (self.tree / "build" / ".range").write_text("HEAD..HEAD\n")
+        options = (
+            "--command=scripts/checkpatch.pl --git {range}",
+            "--range-file=build/.range",
+            "--output=checkpatch.pl.json",
+        )
+        said = self.file(options=options)
+        self.assert_no_record(said, "HEAD..HEAD checks no commit")
+
     def test_a_line_that_is_not_utf8(self) -> None:
         self.make(printed(list(b"caf\xe9 au lait")))
         (entry,) = self.entries()

@@ -112,10 +112,12 @@ agree.
 `command` is the command as run at the top of the tree, its paths
 relative to it: `make -s C=2 CF=-Wsparse-error init/main.o`. It leaves
 out the options that only place files, such as make's `-C` and `O=`,
-and the variables in `env`. `env` holds each environment variable that
-changes what the command reports, as it was set. Running `command` with
-`env`'s variables, at the top of a tree at the same commit and build,
-repeats the run.
+and the variables in `env`. Where the command read a range of commits,
+it names the range whole, as `git rev-parse` resolves its ends: the same
+commits, wherever `HEAD` has moved. `env` holds each environment
+variable that changes what the command reports, as it was set. Running
+`command` with `env`'s variables, at the top of a tree at the same
+commit and build, repeats the run.
 
 `env` lists at least these, each when set and not empty:
 
@@ -257,7 +259,9 @@ qemu/                                    another project
   --abbrev=12 --always --dirty` names it in a clone with the project's
   release tags. A tree with changes not committed is thus filed apart,
   under a name that ends in `-dirty`, and `subject.commit` is the commit
-  the changes lie on.
+  the changes lie on. A tool that read a range of commits read no working
+  tree: its record takes no `-dirty`, for the commits it read are the
+  same whatever the tree wears.
 - A series is named by the Message-ID of its first message, without
   `<>`: the message posted, or the first of a local mbox. A Message-ID
   always holds an `@` and a commit's name never does. One that holds a
@@ -284,6 +288,7 @@ qemu/                                    another project
   entries has that build's `config`. A record of a tool that reads no
   build lies directly under the commit, and its entries have none:
   `checkpatch.pl` reads the commits alone, so one run serves every build.
+  A tool that read a range of commits lies under its last commit.
 - A QEMU commit has no build level: its records lie directly under the
   commit, and configure run with another `--target-list` is another
   entry of `configure.json`.
