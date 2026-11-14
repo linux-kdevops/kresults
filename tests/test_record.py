@@ -465,6 +465,26 @@ class RecordTest(unittest.TestCase):
         (entry,) = self.entries()
         self.assertEqual(entry["output"], "b.c:2: error\n")
 
+    def test_the_journal_is_asked_to_drop_the_lines_below_the_level(self) -> None:
+        # The read of the unit's lines names the level, and the fake serves
+        # none without it: the journal filters, so a run that printed much
+        # is not read whole only to be thrown away.
+        ask = (
+            '[ "$1" = --sync ] && exit 1\n'
+            'case " $* " in *"SYSLOG_IDENTIFIER"*)\n'
+            '\tcase " $* " in *"--priority=4"*) exec cat "$JOURNAL" ;; esac\n'
+            "\texit 0\n"
+            "\t;;\n"
+            "esac\n"
+            'exec cat "$JOURNAL"\n'
+        )
+        journalctl = self.root / "bin" / "journalctl"
+        journalctl.write_text(f"#!/bin/sh\n{ask}")
+        journalctl.chmod(0o755)
+        self.make(*LEVELS, "--priority=warning")
+        (entry,) = self.entries()
+        self.assertEqual(entry["output"], "a.c:1: warning\nb.c:2: error\n")
+
     def test_the_identifier_finds_a_line_journald_names_no_unit_on(self) -> None:
         lost = printed("ERROR: example")
         del lost["_SYSTEMD_INVOCATION_ID"]

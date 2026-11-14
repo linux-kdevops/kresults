@@ -354,7 +354,13 @@ def journal(invocation_id: str, level: int | None = None) -> tuple[list[str], in
     # other run. The manager's own are under its name, and this program's and
     # those of its earlier runs are not yet written, or older than the start.
     name = Path(cgroup()).name
-    found = run(*query, f"SYSLOG_IDENTIFIER={name}", f"--since=@{started // 10**6}")
+    # The journal drops the lines below the level itself, so krecord reads
+    # only those the record keeps: the progress of a run that printed
+    # much is never read to be thrown away.
+    wanted = () if level is None else (f"--priority={level}",)
+    found = run(
+        *query, f"SYSLOG_IDENTIFIER={name}", f"--since=@{started // 10**6}", *wanted
+    )
     printed = [
         message_of(entry.get("MESSAGE"))
         for entry in map(json.loads, found.splitlines())
