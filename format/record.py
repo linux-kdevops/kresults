@@ -113,6 +113,9 @@ STAMP = re.compile(r"^\[ *\d+\.\d+\]")
 ADDRESS = re.compile(r"0x[0-9a-fA-F]{6,}")
 DIFF_TIME = re.compile(r"^((?:---|\+\+\+) [^\t]*)\t.*")
 VERSION = re.compile(r"\d+(?:\.\d+)+")
+# A Message-ID as the schema allows one (record.schema.json): a series
+# whose Message-ID holds a slash is not recorded.
+MESSAGE = re.compile(r"[^<>\s/]+@[^<>\s/]+")
 # syslog's levels by name, each at its number.
 PRIORITIES = ("emerg", "alert", "crit", "err", "warning", "notice", "info", "debug")
 
@@ -225,6 +228,22 @@ def range_of(args: argparse.Namespace) -> str | None:
     return f"{whole[0]}..{whole[1]}"
 
 
+def message_id_of(args: argparse.Namespace) -> str | None:
+    """Return the Message-ID of the series a tool took, as it was posted.
+
+    Nothing without --message-id-file. The file holds the Message-ID as
+    the task took it, one line, in the schema's own form: a series whose
+    Message-ID holds a slash is not recorded.
+    """
+    if args.message_id_file is None:
+        return None
+    need(args.message_id_file.is_file(), f"{args.message_id_file} does not exist")
+    message = args.message_id_file.read_text("utf-8").partition("\n")[0].strip()
+    need(message, f"{args.message_id_file} names no Message-ID")
+    need(MESSAGE.fullmatch(message), f"{message} is no Message-ID")
+    return message
+
+
 def file_of(args: argparse.Namespace) -> str | None:
     """Return what the command worked on, as the command names it.
 
@@ -252,15 +271,19 @@ def placed(
     commit: str,
     project: str,
     file_: str | None = None,
+    message: str | None = None,
 ) -> tuple[Json, str]:
     """Return the subject of a record and the name of its directory.
 
     A tool that read a range read the commits, not the working tree: the
     range's last commit names the record, without the -dirty of a tree with
     changes not committed, for the commits it read are the same whatever
-    the tree wears.
+    the tree wears. A tool that took a series names it by the Message-ID
+    it was posted as, before it applies to any commit.
     """
     describe = ("--tags", "--match", "v[0-9]*", "--abbrev=12", "--always")
+    if message:
+        return {"project": project, "message_id": message}, message
     if checked:
         tip = checked.partition("..")[2]
         subject: Json = {"project": project, "commit": tip, "range": checked}
@@ -501,7 +524,7 @@ def file_run(args: argparse.Namespace) -> None:
     worked = file_of(args)
     if args.producer_tree:
         args.producer_version = version_of(args.producer_tree)
-    subject, name = placed(checked, commit, args.project, worked)
+    subject, name = placed(checked, commit, args.project, worked, message_id_of(args))
     directory = build = args.records / args.project / name
     entry = ran(args, named(args.command, configuration, checked, worked), top)
     settings = config.read_bytes() if config else b""
@@ -541,7 +564,7 @@ def file_run(args: argparse.Namespace) -> None:
     write(filed, merged(filed, subject, entry))
     if config:
         write(build / "config", settings)
-    if not (directory / "series.json").exists():
+    if "message_id" not in subject and not (directory / "series.json").exists():
         # A commit that came from no message is its own base. The series
         # names the commit the record lies under, the range's tip where
         # one was checked, not the tree's HEAD.
@@ -572,6 +595,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     name.add_argument("--configuration-file", type=Path, metavar="FILE")
     parser.add_argument("--range-file", type=Path, metavar="FILE")
     parser.add_argument("--file", type=Path, metavar="FILE")
+    parser.add_argument("--message-id-file", type=Path, metavar="FILE")
     parser.add_argument("--tool", action="append", default=[], metavar="NAME")
     parser.add_argument("--env", action="append", default=[], metavar="VAR")
     parser.add_argument("--priority", choices=PRIORITIES, metavar="LEVEL")
@@ -582,6 +606,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(
             "--config names a build of the working tree, and "
             "--range-file commits apart from it"
+        )
+    if args.config and args.message_id_file:
+        parser.error(
+            "--config names a build of the working tree, and "
+            "--message-id-file a series apart from it"
+        )
+    if args.range_file and args.message_id_file:
+        parser.error(
+            "--range-file names commits a tool read, and "
+            "--message-id-file a series it took"
         )
     try:
         file_run(args)

@@ -88,6 +88,11 @@ the version (`format/CHANGES.md`).
   holds it in `subject.file`, and `{file}` fills it in the command and
   the record's name, so a producer gives krecord one line for every
   file it checks.
+- A run that took a series gives its Message-ID in a file, as a run
+  that read commits gives its range in one. The record holds it in
+  `subject.message_id` and lies under the Message-ID, with no
+  `series.json`: the series is recorded before it applies to any commit,
+  and one that did not apply has no commit to lie under.
 - A record's name may name the compiler, filled from the `.config`.
   `W=1e` keeps the runs of two compilers apart, and a producer that
   named neither would write its line once per compiler.

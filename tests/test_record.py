@@ -45,6 +45,7 @@ FAKES = {
     "checkpatch.pl": "echo Version: 0.32\n",
     "check-uapi.sh": "exit 1\n",
     "kernel-doc": "exit 1\n",
+    "b4": "echo 'This is b4 0.14.1'\n",
     "dpkg-query": (
         'case "$1" in\n'
         '--search) echo "example-tools:amd64: $2" ;;\n'
@@ -400,6 +401,54 @@ class RecordTest(unittest.TestCase):
         self.assertEqual(entry["command"], f"scripts/check-uapi.sh -b HEAD -p {base}")
         subject = {"project": "linux", "commit": tip, "range": f"{base}..{tip}"}
         self.assertEqual(self.read(path)["subject"], subject)
+
+    def test_a_series_is_filed_under_its_message_id(self) -> None:
+        posted = "20260102-topic-v1-0-0123456789ab@example.org"
+        (self.tree / "build" / ".message-id").write_text(f"{posted}\n")
+        options = (
+            f"--command=b4 --no-stdin mbox --no-cache --single-message {posted}",
+            "--message-id-file=build/.message-id",
+            "--output=b4/mbox.json",
+        )
+        self.file(printed(f"Looking up {posted} in lore"), options=options)
+        series = f"linux/{posted}"
+        # The message the series was posted as, which the format names beside
+        # its record.
+        (self.records / series / "b4" / "mbox.mbx").write_text("From: A Developer\n\n")
+        path = f"{series}/b4/mbox.json"
+        (entry,) = self.entries(path)
+        self.assertEqual(
+            entry["command"], f"b4 --no-stdin mbox --no-cache --single-message {posted}"
+        )
+        subject = {"project": "linux", "message_id": posted}
+        self.assertEqual(self.read(path)["subject"], subject)
+        self.assertFalse((self.records / series / "series.json").exists())
+
+    def test_no_record_with_a_message_id_that_is_none(self) -> None:
+        options = (
+            "--command=b4 --no-stdin mbox",
+            "--message-id-file=build/.message-id",
+            "--output=b4/mbox.json",
+        )
+        for text, why in (
+            ("\n", "build/.message-id names no Message-ID"),
+            ("2026/0102@example.org\n", "2026/0102@example.org is no Message-ID"),
+        ):
+            (self.tree / "build" / ".message-id").write_text(text)
+            self.assert_no_record(self.file(options=options), why)
+
+    def test_a_series_apart_from_a_build_or_a_range_is_an_error(self) -> None:
+        with self.assertRaises(SystemExit):
+            self.make("--message-id-file=build/.message-id")
+        options = (
+            "--command=scripts/checkpatch.pl --git {range}",
+            "--range-file=build/.range",
+            "--message-id-file=build/.message-id",
+            "--output=checkpatch.pl.json",
+        )
+        with self.assertRaises(SystemExit):
+            self.file(options=options)
+        self.assertFalse(self.records.exists())
 
     def test_a_file_names_what_the_command_worked_on(self) -> None:
         (self.tree / "build" / ".file").write_text("init/main.o\n")

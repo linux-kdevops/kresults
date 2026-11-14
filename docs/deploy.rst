@@ -69,7 +69,9 @@ and ``{configuration}`` in ``--output`` and ``--command`` stands for what
 it holds. So do ``--range-file``, whose ``{range}`` and ``{base}`` name
 the commits a tool read, and ``--file``, whose ``{file}`` names the file
 it worked on; ``{compiler}``, in ``--output`` alone, names the build's
-compiler.
+compiler. ``--message-id-file`` names a file that holds the Message-ID
+of the series a tool took, and the record lies under the Message-ID,
+not the tree's commit.
 
 A run the format cannot file leaves no record: ``krecord`` says why in one
 line and exits 0. That is a run with no lab named, outside a Git work
