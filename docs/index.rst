@@ -10,6 +10,7 @@ kresults
    :end-before: <!-- docs/index.rst includes
 
 :src:`krecord <format/record.py>` files one run of a command,
+:src:`kseries <format/series.py>` names the commits of a series,
 :src:`validate <format/validate.py>` checks a tree of :term:`records <Record>`,
 and :src:`krender <format/render.py>` writes one as a static site.
 :doc:`deploy` sets each up.

@@ -4,7 +4,7 @@
 Deployment
 ==========
 
-The three programs are scripts under :src:`format`, each run from a clone
+The four programs are scripts under :src:`format`, each run from a clone
 or under its name on ``PATH``. They need `Python`_ 3.13 or later and `Git`_,
 and ``validate`` also needs `jsonschema`_ (``python3-jsonschema``).
 
@@ -14,8 +14,9 @@ and ``validate`` also needs `jsonschema`_ (``python3-jsonschema``).
    $ cd kresults
    $ ln --symbolic --verbose "$PWD/format/record.py" ~/.local/bin/krecord
    $ ln --symbolic --verbose "$PWD/format/render.py" ~/.local/bin/krender
+   $ ln --symbolic --verbose "$PWD/format/series.py" ~/.local/bin/kseries
 
-With `Nix`_, the flake installs all three and the units:
+With `Nix`_, the flake installs all four and the units:
 
 .. code-block:: console
 
@@ -82,6 +83,19 @@ tree, whose ``--config`` file is missing, or that a signal ended.
 
 ``krecord`` reads your own journal, which `journald`_ keeps only when it
 stores on disk: ``/var/log/journal/*/user-UID.journal`` exists.
+
+``kseries`` writes the ``series.json`` of commits that came from no
+message. Run it at the top of the tree with their range, ``BASE..TIP``, or
+``BASE..`` for the tree's ``HEAD``:
+
+.. code-block:: console
+
+   $ kseries --range v7.3..xfs-fix
+
+It names the base, the commits the base lacks and the files they change
+under the tip's directory, in place of the ``series.json`` ``krecord``
+left there. It takes ``--project`` and ``--records`` as ``krecord`` does,
+and exits 1 with the reason when the range names no such commits.
 
 Checking records
 ================

@@ -491,7 +491,7 @@ def output_of(printed: Sequence[str], top: str) -> str:
     return re.sub(home, "~", output) + "\n"
 
 
-def write(file: Path, data: Json | bytes) -> None:
+def write(file: Path, data: Json | bytes, kind: str = "record") -> None:
     """Write a file whole, so that no reader finds part of it, and print its name."""
     if not isinstance(data, bytes):
         data = (json.dumps(data, indent=2, ensure_ascii=False) + "\n").encode()
@@ -500,7 +500,7 @@ def write(file: Path, data: Json | bytes) -> None:
         temporary.write(data)
     Path(temporary.name).chmod(0o644)
     Path(temporary.name).replace(file)
-    sys.stderr.write(f"record: {file}\n")
+    sys.stderr.write(f"{kind}: {file}\n")
 
 
 def merged(path: Path, subject: Json, entry: Json) -> Json:
