@@ -216,6 +216,11 @@ class RecordTest(unittest.TestCase):
         entries = [entry for entry in journal if not isinstance(entry, str)]
         return self.file(*entries, options=(*build, *options, *more), **environ)
 
+    def checkpatch(self, range_: str) -> tuple[str, ...]:
+        """Return the options of record after checkpatch.pl read a range."""
+        command = "--command=scripts/checkpatch.pl --git {range}"
+        return (command, f"--range={range_}", "--output=checkpatch.pl.json")
+
     def cgroup(self, *but: str) -> None:
         """Write the files of the unit's cgroup, but for some."""
         directory = self.cgroups / "user.slice" / NAME
@@ -385,6 +390,34 @@ class RecordTest(unittest.TestCase):
         )
         said = self.file(options=options)
         self.assert_no_record(said, "HEAD..HEAD checks no commit")
+
+    def test_a_range_given_as_an_option(self) -> None:
+        self.git("commit", "--quiet", "--allow-empty", "--message", "init: another")
+        base, tip = self.git("rev-parse", "HEAD~1"), self.git("rev-parse", "HEAD")
+        self.file(options=self.checkpatch("HEAD~1.."))
+        path = f"linux/v1.2-1-g{tip[:12]}/checkpatch.pl.json"
+        (entry,) = self.entries(path)
+        self.assertEqual(entry["command"], f"scripts/checkpatch.pl --git {base}..{tip}")
+        self.assertEqual(self.read(path)["subject"]["range"], f"{base}..{tip}")
+        with self.assertRaises(SystemExit):
+            self.file(options=(*self.checkpatch("HEAD"), "--range-file=build/.range"))
+
+    def test_a_range_that_starts_with_an_option_leaves_no_record(self) -> None:
+        said = self.file(options=self.checkpatch("--all.."))
+        self.assert_no_record(said, "--all.. names no commit")
+
+    def test_another_range_to_the_same_tip_replaces_the_record(self) -> None:
+        for message in ("init: another", "init: one more"):
+            self.git("commit", "--quiet", "--allow-empty", "--message", message)
+        middle, tip = self.git("rev-parse", "HEAD~1"), self.git("rev-parse", "HEAD")
+        path = f"linux/v1.2-2-g{tip[:12]}/checkpatch.pl.json"
+        for base in ("HEAD~2", "HEAD~1", "HEAD~1"):
+            self.file(options=self.checkpatch(f"{base}.."))
+        (entry,) = self.entries(path)
+        checked = f"{middle}..{tip}"
+        self.assertEqual(entry["command"], f"scripts/checkpatch.pl --git {checked}")
+        self.assertEqual(len(entry["invocations"]), 2)
+        self.assertEqual(self.read(path)["subject"]["range"], checked)
 
     def test_a_command_names_one_end_of_the_range_whole(self) -> None:
         self.git("commit", "--quiet", "--allow-empty", "--message", "init: another")

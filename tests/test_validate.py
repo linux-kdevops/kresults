@@ -243,6 +243,11 @@ class Validate(unittest.TestCase):
         at(files, CHECKPATCH)["subject"]["build"] = build(TINY)
         self.assert_problem(files, CHECKPATCH, f"lies outside its build, {TINY}/")
 
+    def test_range_ends_at_another_commit(self) -> None:
+        files = good()
+        at(files, CHECKPATCH)["subject"]["range"] = f"{TIP}..{BASE}"
+        self.assert_problem(files, CHECKPATCH, "does not end at its commit")
+
     def test_commit_record_has_config(self) -> None:
         files = good()
         first_entry(files, HTMLDOCS)["config"] = CONFIG

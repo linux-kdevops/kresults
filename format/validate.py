@@ -40,6 +40,7 @@ class TreeSubject(TypedDict):
     build: NotRequired[Build]
     file: NotRequired[str]
     test: NotRequired[str]
+    range: NotRequired[str]
 
 
 class SeriesSubject(TypedDict):
@@ -256,6 +257,8 @@ def check_tree(place: Place, subject: TreeSubject) -> Iterator[str]:
         yield from check_build(place, subject["build"])
     elif place.build:
         yield "lies under a build that its subject does not name"
+    if "range" in subject and not subject["range"].endswith(f"..{subject['commit']}"):
+        yield "names a range that does not end at its commit"
     # A record is named for its tool, then for what the tool was run on.
     path = "/".join(place.below)
     for target in (subject.get("file"), subject.get("test")):

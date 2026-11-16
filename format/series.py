@@ -20,14 +20,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from record import Json, NoRecordError, need, placed, run, state, write
-
-
-def whole(revision: str) -> str:
-    """Return a revision's commit, whole, or nothing when it names none."""
-    # After --end-of-options a revision that starts with - is no option.
-    name = f"{revision}^{{commit}}"
-    return run("git", "rev-parse", "--verify", "--end-of-options", name)
+from record import Json, NoRecordError, need, placed, run, state, whole, write
 
 
 def named(commit: str, project: str) -> str:

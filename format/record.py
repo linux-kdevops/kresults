@@ -157,6 +157,13 @@ def run(*command: str) -> str:
     return done.stdout.decode(errors="replace").strip() if not done.returncode else ""
 
 
+def whole(revision: str) -> str:
+    """Return a revision's commit, whole, or nothing when it names none."""
+    # After --end-of-options a revision that starts with - is no option.
+    name = f"{revision}^{{commit}}"
+    return run("git", "rev-parse", "--verify", "--end-of-options", name)
+
+
 def state() -> Path:
     """Return where the records go when no option says: the user's state."""
     home = os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state"
@@ -210,23 +217,25 @@ def named(
 def range_of(args: argparse.Namespace) -> str | None:
     """Return the commits a tool read as patches, BASE..COMMIT both whole.
 
-    Nothing without --range-file. The file holds the range as the task took
-    it: BASE..COMMIT, BASE.. for the tree's HEAD, or one commit, whose patch
-    is its parent's..its own.
+    Nothing without --range or --range-file. The option, or the file's first
+    line, holds the range as the task took it: BASE..COMMIT, BASE.. for the
+    tree's HEAD, or one commit, whose patch is its parent's..its own.
     """
-    if args.range_file is None:
+    text: str | None = args.range
+    if args.range_file is not None:
+        need(args.range_file.is_file(), f"{args.range_file} does not exist")
+        text = args.range_file.read_text("utf-8").partition("\n")[0].strip()
+        need(text, f"{args.range_file} names no range")
+    if text is None:
         return None
-    need(args.range_file.is_file(), f"{args.range_file} does not exist")
-    text = args.range_file.read_text("utf-8").partition("\n")[0].strip()
-    need(text, f"{args.range_file} names no range")
     base, dots, tip = text.partition("..")
     if not dots:
         base, tip = text + "^", text
     tip = tip or "HEAD"
-    whole = [run("git", "rev-parse", f"{end}^{{commit}}") for end in (base, tip)]
-    need(all(whole), f"{text} names no commit")
-    need(whole[0] != whole[1], f"{text} checks no commit")
-    return f"{whole[0]}..{whole[1]}"
+    first, last = whole(base), whole(tip)
+    need(first and last, f"{text} names no commit")
+    need(first != last, f"{text} checks no commit")
+    return f"{first}..{last}"
 
 
 def message_id_of(args: argparse.Namespace) -> str | None:
@@ -507,7 +516,8 @@ def merged(path: Path, subject: Json, entry: Json) -> Json:
     """Return the record at path with a run added: to the entry it equals, or as one."""
     record: Json = {"schema": 1, "subject": subject, "entries": []}
     if path.is_file():
-        record = json.loads(path.read_bytes())
+        filed: Json = json.loads(path.read_bytes())
+        record = filed if filed["subject"] == subject else record
     entries: list[Json] = record["entries"]
     same = [known for known in entries if run_of(known) == run_of(entry)]
     if same:
@@ -607,7 +617,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     name = parser.add_mutually_exclusive_group()
     name.add_argument("--configuration", metavar="NAME")
     name.add_argument("--configuration-file", type=Path, metavar="FILE")
-    parser.add_argument("--range-file", type=Path, metavar="FILE")
+    checked = parser.add_mutually_exclusive_group()
+    checked.add_argument("--range", metavar="RANGE")
+    checked.add_argument("--range-file", type=Path, metavar="FILE")
     parser.add_argument("--file", type=Path, metavar="FILE")
     parser.add_argument("--arguments-file", type=Path, metavar="FILE")
     parser.add_argument("--message-id-file", type=Path, metavar="FILE")
@@ -617,19 +629,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.config and not (args.configuration or args.configuration_file):
         parser.error("--config needs --configuration or --configuration-file")
-    if args.config and args.range_file:
+    ranged = args.range is not None or args.range_file
+    if args.config and ranged:
         parser.error(
             "--config names a build of the working tree, and "
-            "--range-file commits apart from it"
+            "--range or --range-file commits apart from it"
         )
     if args.config and args.message_id_file:
         parser.error(
             "--config names a build of the working tree, and "
             "--message-id-file a series apart from it"
         )
-    if args.range_file and args.message_id_file:
+    if ranged and args.message_id_file:
         parser.error(
-            "--range-file names commits a tool read, and "
+            "--range or --range-file names commits a tool read, and "
             "--message-id-file a series it took"
         )
     try:

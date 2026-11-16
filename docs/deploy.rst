@@ -67,11 +67,11 @@ as a drop-in is, names its version by ``--producer-tree``, a directory
 whose Git tree describes the producer.
 ``--configuration-file`` names a file another command left in the build,
 and ``{configuration}`` in ``--output`` and ``--command`` stands for what
-it holds. So do ``--range-file``, whose ``{range}`` and ``{base}`` name
-the commits a tool read, and ``--file``, whose ``{file}`` names the file
-it worked on; ``{compiler}``, in ``--output`` alone, names the build's
-compiler. ``--arguments-file`` names a file that holds the arguments
-that change from one run to the next, one a line, and the record's
+it holds. So do ``--range`` or ``--range-file``, whose ``{range}`` and
+``{base}`` name the commits a tool read, and ``--file``, whose ``{file}``
+names the file it worked on; ``{compiler}``, in ``--output`` alone, names
+the build's compiler. ``--arguments-file`` names a file that holds the
+arguments that change from one run to the next, one a line, and the record's
 command is ``--command`` with each after it, quoted where a shell needs
 it. ``--message-id-file`` names a file that holds the Message-ID
 of the series a tool took, and the record lies under the Message-ID,

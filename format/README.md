@@ -295,7 +295,9 @@ qemu/                                    another project
   entries has that build's `config`. A record of a tool that reads no
   build lies directly under the commit, and its entries have none:
   `checkpatch.pl` reads the commits alone, so one run serves every build.
-  A tool that read a range of commits lies under its last commit.
+  A tool that read a range of commits lies under its last commit, and a
+  run on another range that ends there replaces the record: it holds the
+  latest range checked alone.
 - A QEMU commit has no build level: its records lie directly under the
   commit, and configure run with another `--target-list` is another
   entry of `configure.json`.
