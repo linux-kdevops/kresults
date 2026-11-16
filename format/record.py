@@ -114,6 +114,9 @@ STAMP = re.compile(r"^\[ *\d+\.\d+\]")
 ADDRESS = re.compile(r"0x[0-9a-fA-F]{6,}")
 DIFF_TIME = re.compile(r"^((?:---|\+\+\+) [^\t]*)\t.*")
 VERSION = re.compile(r"\d+(?:\.\d+)+")
+# A word that is a `git describe` name, as a tool built from its Git tree
+# prints for its version: v0.5.0-9187-g5189e3fb.
+DESCRIBE = re.compile(r"(?<!\S)\S*-g[0-9a-f]{7,}(?:-dirty)?(?!\S)")
 # A Message-ID as the schema allows one (record.schema.json): a series
 # whose Message-ID holds a slash is not recorded.
 MESSAGE = re.compile(r"[^<>\s/]+@[^<>\s/]+")
@@ -416,8 +419,12 @@ def journal(invocation_id: str, level: int | None = None) -> tuple[list[str], in
     return printed, started
 
 
-def build_of(path: str) -> str:
-    """Return the exact build of a program: its store path, or its package."""
+def build_of(path: str, version: str = "") -> str:
+    """Return the exact build of a program.
+
+    That is its store path, or its package, or else the `git describe` name
+    in the line it prints of its version.
+    """
     if path.startswith("/nix/store/"):
         return "/".join(path.split("/")[:4])
     release = OS_RELEASE.read_text("utf-8") if OS_RELEASE.is_file() else ""
@@ -429,16 +436,21 @@ def build_of(path: str) -> str:
         owner = run("dpkg-query", "--search", path).partition(":")[0]
         form = "--showformat=${Package} ${Version}"
         package = owner and run("dpkg-query", "--show", form, owner)
-    need(package, f"no package of {distribution or 'the host'} holds {path}")
-    return f"{distribution}:{package}"
+    if package:
+        return f"{distribution}:{package}"
+    described = DESCRIBE.search(version)
+    packages = f"no package of {distribution or 'the host'}"
+    need(described, f"{path} is in {packages} and prints no git describe")
+    return described[0] if described else ""
 
 
 def tool(name: str) -> Json:
     """Return a tool as an entry names it: its name, version and build."""
     path = shutil.which(name) or ""
     need(path, f"{name} is not on PATH")
-    versions = VERSION.findall(run(name, "--version").partition("\n")[0])
-    build = build_of(str(Path(path).resolve()))
+    printed = run(name, "--version").partition("\n")[0]
+    versions = VERSION.findall(printed)
+    build = build_of(str(Path(path).resolve()), printed)
     return {"name": name, "version": versions[-1] if versions else "", "build": build}
 
 

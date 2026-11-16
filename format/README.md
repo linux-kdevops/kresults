@@ -100,7 +100,8 @@ from, so `build` names the exact build, as one of:
 
 - a Nix store path, `/nix/store/<hash>-sparse-0.6.4`;
 - `git describe` of the source it was built from,
-  `v0.6.4-12-g0123456789ab`;
+  `v0.6.4-12-g0123456789ab`, which a tool outside the store and the
+  packages prints as its version;
 - a distribution's package and its version, `debian:sparse 0.6.4-4`;
 - `tree` for a tool in the tree under test, such as
   `scripts/checkpatch.pl`, which is built from the subject's commit.

@@ -689,11 +689,35 @@ class RecordTest(unittest.TestCase):
         why = "{configuration}.json holds {configuration}, which nothing given fills"
         self.assert_no_record(said, why)
 
-    def test_no_record_with_a_tool_of_no_package(self) -> None:
-        (self.root / "bin" / "dpkg-query").write_text("#!/bin/sh\nexit 1\n")
-        said = self.make()
-        self.assertRegex(said, r"^no record: no package of debian holds .*/bin/make\n$")
-        self.assertFalse(self.records.exists())
+    def outside(self, version: str) -> Path:
+        """Write a tool no package holds, which prints a version, and return it."""
+        smatch = self.root / "bin" / "smatch"
+        # Only the first line it prints is its version.
+        smatch.write_text(f"#!/bin/sh\necho {version}\necho v9.9-1-g0123456789ab\n")
+        smatch.chmod(0o755)
+        packages = self.root / "bin" / "dpkg-query"
+        held = packages.read_text().partition("\n")[2]
+        packages.write_text(f'#!/bin/sh\n[ "$2" = {smatch} ] && exit 1\n{held}')
+        return smatch
+
+    def test_a_tool_of_no_package_is_the_build_it_describes(self) -> None:
+        self.outside("v0.5.0-9187-g5189e3fb")
+        self.make("--tool=smatch")
+        smatch = {"name": "smatch", "version": "0.5.0"}
+        smatch["build"] = "v0.5.0-9187-g5189e3fb"
+        self.assertEqual(self.entries()[0]["tools"][1], smatch)
+
+    def test_a_describe_name_is_the_whole_word(self) -> None:
+        dirty = "v0.6.4-12-g0123456789ab-dirty"
+        self.assertEqual(record.DESCRIBE.findall(f"sparse {dirty} (x)"), [dirty])
+        for word in ("v1-2-g5189e3", "v1-2-g5189e3fbx", "v1-2-g5189e3fb-dirt"):
+            self.assertIsNone(record.DESCRIBE.search(word), word)
+
+    def test_no_record_with_a_tool_of_no_package_that_describes_none(self) -> None:
+        smatch = self.outside("1.2.3")
+        said = self.make("--tool=smatch")
+        why = f"{smatch} is in no package of debian and prints no git describe"
+        self.assert_no_record(said, why)
 
     def test_the_records_go_to_the_state_directory_by_default(self) -> None:
         self.without = ("--records",)
