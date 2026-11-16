@@ -200,18 +200,18 @@ def named(
 
     {configuration} takes the configuration's name, {range} the range,
     {base} its first commit, {file} the file the command worked on and
-    {compiler} the build's compiler.
+    {compiler} the build's compiler. One that nothing given fills would be
+    filed as it stands: the run leaves no record.
     """
-    if configuration:
-        text = text.replace("{configuration}", configuration)
-    if range_:
-        base = range_.partition("..")[0]
-        text = text.replace("{range}", range_).replace("{base}", base)
-    if file_:
-        text = text.replace("{file}", file_)
-    if compiler:
-        text = text.replace("{compiler}", compiler)
-    return text
+    fills = {"configuration": configuration, "range": range_, "file": file_}
+    fills |= {"base": (range_ or "").partition("..")[0], "compiler": compiler}
+
+    def fill(placeholder: re.Match[str]) -> str:
+        value = fills[placeholder[1]]
+        need(value, f"{text} holds {placeholder[0]}, which nothing given fills")
+        return str(value)
+
+    return re.sub(r"\{(" + "|".join(fills) + r")\}", fill, text)
 
 
 def range_of(args: argparse.Namespace) -> str | None:
@@ -257,20 +257,21 @@ def message_id_of(args: argparse.Namespace) -> str | None:
 def file_of(args: argparse.Namespace) -> str | None:
     """Return what the command worked on, as the command names it.
 
-    Nothing without --file. The file holds the name as the task took it,
-    one line: a file or an object, a path from the top of the tree, or a
-    name a command of make's takes, as SPHINXDIRS.
+    Nothing without --file. The option holds the name as the task took it:
+    a file or an object, a path from the top of the tree, or a name a
+    command of make's takes, as SPHINXDIRS.
     """
-    if args.file is None:
+    path: str | None = args.file
+    if path is None:
         return None
-    need(args.file.is_file(), f"{args.file} does not exist")
-    path = args.file.read_text("utf-8").partition("\n")[0].strip()
-    need(path, f"{args.file} names no file")
+    need(path, "--file names no file")
     need(not path.startswith("/"), f"{path} is no path from the top of the tree")
-    # The schema allows no . or .. in it either: one would name a file
-    # outside the tree, or the tree's own directory.
+    # A directory names no file: {file}.json under it would be .json.
+    need(not path.endswith("/"), f"{path} names no file")
+    # The schema allows no . or .. in it either, nor an empty part: one
+    # would name a file outside the tree, or the tree's own directory.
     need(
-        not re.search(r"(^|/)\.\.?(/|$)", path),
+        not re.search(r"(^|/)(\.\.?)?(/|$)", path),
         f"{path} is no path from the top of the tree",
     )
     return path
@@ -620,7 +621,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     checked = parser.add_mutually_exclusive_group()
     checked.add_argument("--range", metavar="RANGE")
     checked.add_argument("--range-file", type=Path, metavar="FILE")
-    parser.add_argument("--file", type=Path, metavar="FILE")
+    parser.add_argument("--file", metavar="NAME")
     parser.add_argument("--arguments-file", type=Path, metavar="FILE")
     parser.add_argument("--message-id-file", type=Path, metavar="FILE")
     parser.add_argument("--tool", action="append", default=[], metavar="NAME")

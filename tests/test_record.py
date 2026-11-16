@@ -484,10 +484,9 @@ class RecordTest(unittest.TestCase):
         self.assertFalse(self.records.exists())
 
     def test_a_file_names_what_the_command_worked_on(self) -> None:
-        (self.tree / "build" / ".file").write_text("init/main.o\n")
         said = self.make(
             "--command=make C=2 CF=-Wsparse-error {file}",
-            "--file=build/.file",
+            "--file=init/main.o",
             "--output=sparse/{file}.json",
         )
         path = f"{BUILD}/sparse/init/main.o.json"
@@ -500,12 +499,11 @@ class RecordTest(unittest.TestCase):
         self.assertEqual(self.read(path)["subject"], subject)
 
     def test_a_record_named_for_the_builds_compiler(self) -> None:
-        (self.tree / "build" / ".file").write_text("init/main.o\n")
         for text, compiler in ((CLANG, "clang"), (GCC, "gcc")):
             self.config.write_text(text)
             self.make(
                 "--command=make W=1e {file}",
-                "--file=build/.file",
+                "--file=init/main.o",
                 "--output={compiler}/{file}.json",
             )
             build = f"linux/v1.2/tinyconfig/x86_64/{compiler}"
@@ -513,10 +511,9 @@ class RecordTest(unittest.TestCase):
             self.assertEqual(len(self.entries(path)), 1)
 
     def test_a_file_without_a_build(self) -> None:
-        (self.tree / "build" / ".file").write_text("init/main.c\n")
         options = (
             "--command=scripts/kernel-doc --none --wall --werror {file}",
-            "--file=build/.file",
+            "--file=init/main.c",
             "--output=kernel-doc/{file}.json",
         )
         self.file(options=options)
@@ -662,20 +659,35 @@ class RecordTest(unittest.TestCase):
             self.assert_no_record(said, "the command was stopped")
 
     def test_no_record_with_a_file_that_names_an_absolute_path(self) -> None:
-        (self.tree / "build" / ".file").write_text("/a/b.c\n")
-        said = self.make("--file=build/.file")
+        said = self.make("--file=/a/b.c")
         self.assert_no_record(said, "/a/b.c is no path from the top of the tree")
 
     def test_no_record_with_a_file_that_climbs_out_of_the_tree(self) -> None:
-        for path in ("../a/b.c", "a/./b.c", "a/b/.."):
-            (self.tree / "build" / ".file").write_text(f"{path}\n")
-            said = self.make("--file=build/.file")
+        for path in ("../a/b.c", "a/./b.c", "a/b/..", "a//b.c"):
+            said = self.make(f"--file={path}")
             self.assert_no_record(said, f"{path} is no path from the top of the tree")
 
     def test_no_record_with_a_file_that_names_none(self) -> None:
-        (self.tree / "build" / ".file").write_text("\n")
-        said = self.make("--file=build/.file")
-        self.assert_no_record(said, "build/.file names no file")
+        said = self.make("--file=")
+        self.assert_no_record(said, "--file names no file")
+
+    def test_no_record_with_a_file_that_names_a_directory(self) -> None:
+        said = self.make("--file=drivers/nvme/", "--output=sparse/{file}.json")
+        self.assert_no_record(said, "drivers/nvme/ names no file")
+
+    def test_no_record_with_a_placeholder_left_unfilled(self) -> None:
+        for option, name in (
+            ("--output=sparse/{file}.json", "file"),
+            ("--command=scripts/checkpatch.pl --git {range}", "range"),
+            ("--command=git diff {base}", "base"),
+            ("--command=make CC={compiler}", "compiler"),
+        ):
+            text = option.partition("=")[2]
+            why = f"{text} holds {{{name}}}, which nothing given fills"
+            self.assert_no_record(self.make(option), why)
+        said = self.file(options=("--command=true", "--output={configuration}.json"))
+        why = "{configuration}.json holds {configuration}, which nothing given fills"
+        self.assert_no_record(said, why)
 
     def test_no_record_with_a_tool_of_no_package(self) -> None:
         (self.root / "bin" / "dpkg-query").write_text("#!/bin/sh\nexit 1\n")
@@ -862,12 +874,6 @@ class RecordTest(unittest.TestCase):
         (entry,) = self.entries(CHECKPATCH)
         self.assertEqual(entry["tools"], [tool("checkpatch.pl", "0.32")])
         self.assertEqual(entry["env"], {"KCFLAGS": "-Wextra"})
-
-    def test_no_configuration_leaves_the_text_as_it_is(self) -> None:
-        names = ("--output={configuration}.json", "--command=make {configuration}")
-        self.file(options=(*names, "--tool=make"))
-        (entry,) = self.read("linux/v1.2/{configuration}.json")["entries"]
-        self.assertEqual(entry["command"], "make {configuration}")
 
     def test_no_record_with_a_configuration_file_that_names_none(self) -> None:
         self.without = ("--configuration",)

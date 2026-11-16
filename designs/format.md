@@ -78,14 +78,14 @@ the version (`format/CHANGES.md`).
   sashiko's, under Apache-2.0. Each project names its own lists, QEMU's
   as well. A series that did not apply has no `series.json`, and so no
   lists.
-- A run that read commits as patches gives its range in a file, as a
-  run that configures gives its name in one. The record holds the range
+- A run that read commits as patches gives its range, on krecord's
+  command line or in a file. The record holds the range
   whole, in `subject.range` and in the command, and lies under its last
   commit, with no `-dirty`: the tool read the commits, not the working
   tree. The range as typed, `HEAD~3..`, would name other commits once
   HEAD moves.
-- A run that worked one file gives it in a file as well. The record
-  holds it in `subject.file`, and `{file}` fills it in the command and
+- A run that worked one file names it on krecord's command line. The
+  record holds it in `subject.file`, and `{file}` fills it in the command and
   the record's name, so a producer gives krecord one line for every
   file it checks.
 - A run that took a series gives its Message-ID in a file, as a run
