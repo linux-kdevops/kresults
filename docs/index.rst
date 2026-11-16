@@ -11,6 +11,7 @@ kresults
 
 :src:`krecord <format/record.py>` files one run of a command,
 :src:`kseries <format/series.py>` names the commits of a series,
+:src:`kobjects <format/objects.py>` lists what a build compiles of one,
 :src:`validate <format/validate.py>` checks a tree of :term:`records <Record>`,
 and :src:`krender <format/render.py>` writes one as a static site.
 :doc:`deploy` sets each up.

@@ -4,7 +4,7 @@
 Deployment
 ==========
 
-The four programs are scripts under :src:`format`, each run from a clone
+The five programs are scripts under :src:`format`, each run from a clone
 or under its name on ``PATH``. They need `Python`_ 3.13 or later and `Git`_,
 and ``validate`` also needs `jsonschema`_ (``python3-jsonschema``).
 
@@ -15,8 +15,9 @@ and ``validate`` also needs `jsonschema`_ (``python3-jsonschema``).
    $ ln --symbolic --verbose "$PWD/format/record.py" ~/.local/bin/krecord
    $ ln --symbolic --verbose "$PWD/format/render.py" ~/.local/bin/krender
    $ ln --symbolic --verbose "$PWD/format/series.py" ~/.local/bin/kseries
+   $ ln --symbolic --verbose "$PWD/format/objects.py" ~/.local/bin/kobjects
 
-With `Nix`_, the flake installs all four and the units:
+With `Nix`_, the flake installs all five and the units:
 
 .. code-block:: console
 
@@ -97,6 +98,21 @@ It names the base, the commits the base lacks and the files they change
 under the tip's directory, in place of the ``series.json`` ``krecord``
 left there. It takes ``--project`` and ``--records`` as ``krecord`` does,
 and exits 1 with the reason when the range names no such commits.
+
+``kobjects`` writes the ``objects.json`` of one build of a series. Run it
+at the top of the tree once the build is done and ``kseries`` has named
+the series, with the ``.config`` and the configuration's name as
+``krecord`` takes them:
+
+.. code-block:: console
+
+   $ kobjects --config build/.config --configuration defconfig
+
+It lists the objects the build compiles from the series' C files, and the
+C files it does not compile, beside the build's ``config``. It takes
+``--configuration-file``, ``--project`` and ``--records`` as ``krecord``
+does, and exits 1 with the reason when the commit has no series or the
+build is not finished.
 
 Checking records
 ================

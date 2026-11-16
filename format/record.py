@@ -528,6 +528,28 @@ def merged(path: Path, subject: Json, entry: Json) -> Json:
     return record
 
 
+def built(config: Path, settings: bytes, configuration: str) -> Json:
+    """Return the build a .config names, as a subject and its directories do."""
+    text = settings.decode(errors="replace")
+    # The .config names the machine built for: its header the arch, and,
+    # where an arch builds two word sizes, its symbols the machine, as
+    # kbuild's UTS_MACHINE does (README.md). The ARCH the run set
+    # changes neither and stays in env.
+    srcarch = find(r"^# Linux/(\S+) .*Kernel Configuration$", text)
+    arch = next(
+        (
+            machine
+            for symbol, machine in MACHINES.get(srcarch, ())
+            if find(rf"^({symbol})$", text)
+        ),
+        srcarch,
+    )
+    need(arch, f"{config} names no ARCH")
+    compiler = "clang" if find(r"^(CONFIG_CC_IS_CLANG=y)$", text) else "gcc"
+    names = {"configuration": sorted(configuration.split("+")), "arch": arch}
+    return {**names, "compiler": compiler}
+
+
 def file_run(args: argparse.Namespace) -> None:
     """File the run the environment names, or raise why it leaves no record."""
     environ = os.environ
@@ -555,29 +577,13 @@ def file_run(args: argparse.Namespace) -> None:
     settings = config.read_bytes() if config else b""
     compiler = ""
     if config:
-        text = settings.decode(errors="replace")
-        # The .config names the machine built for: its header the arch, and,
-        # where an arch builds two word sizes, its symbols the machine, as
-        # kbuild's UTS_MACHINE does (README.md). The ARCH the run set
-        # changes neither and stays in env.
-        srcarch = find(r"^# Linux/(\S+) .*Kernel Configuration$", text)
-        arch = next(
-            (
-                machine
-                for symbol, machine in MACHINES.get(srcarch, ())
-                if find(rf"^({symbol})$", text)
-            ),
-            srcarch,
-        )
-        need(arch, f"{config} names no ARCH")
-        compiler = "clang" if find(r"^(CONFIG_CC_IS_CLANG=y)$", text) else "gcc"
-        names = {"configuration": sorted(str(configuration).split("+")), "arch": arch}
-        subject["build"] = {**names, "compiler": compiler}
+        subject["build"] = names = built(config, settings, str(configuration))
+        compiler = names["compiler"]
         # The .config says which compiler built: no producer names it too.
         named_too = any(one["name"] == compiler for one in entry["tools"])
         entry["tools"] += [] if named_too else [tool(compiler)]
         entry["config"] = "sha256:" + hashlib.sha256(settings).hexdigest()
-        build = directory.joinpath(*names["configuration"], arch, compiler)
+        build = directory.joinpath(*names["configuration"], names["arch"], compiler)
     status = int(environ.get("EXIT_STATUS", "0"))
     entry |= {"status": "fail" if status else "pass", "exit": status}
     if printed:
