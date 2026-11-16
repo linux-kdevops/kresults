@@ -281,7 +281,9 @@ qemu/                                    another project
   an x86_64 host is `i386`. The configuration is the make target
   that wrote the `.config`, such as `tinyconfig`, or the profiles of
   fragments merged into it, one directory each, in the order of
-  `LC_ALL=C sort`: `block-layer/nvm-express-driver/`. A profile is named
+  `LC_ALL=C sort`: `block-layer/nvm-express-driver/`. `krecord` takes
+  them as one name, joined by `+` in any order:
+  `nvm-express-driver+block-layer`. A profile is named
   after the `MAINTAINERS` entry whose code it configures: the entry's
   title in lower case, each run of other characters a hyphen,
   `block-layer` for BLOCK LAYER. A profile for no entry's code is named

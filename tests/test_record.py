@@ -700,6 +700,18 @@ class RecordTest(unittest.TestCase):
         (entry,) = self.entries(f"{BUILD}/make/tinyconfig.json")
         self.assertEqual(entry["command"], "make tinyconfig")
 
+    def test_a_configuration_of_profiles_is_a_directory_each_sorted(self) -> None:
+        self.without = ("--configuration",)
+        (self.tree / "build" / "name").write_text("b+a\n")
+        names = ("--output=make/all.json", "--command=make {configuration}")
+        self.make("--configuration-file=build/name", *names)
+        build = "linux/v1.2/a/b/x86_64/gcc"
+        (entry,) = self.entries(f"{build}/make/all.json")
+        self.assertEqual(entry["command"], "make b+a")
+        subject = self.read(f"{build}/make/all.json")["subject"]
+        self.assertEqual(subject["build"]["configuration"], ["a", "b"])
+        self.assertTrue((self.records / build / "config").is_file())
+
     def test_a_command_names_its_record_and_its_first_tool(self) -> None:
         self.without = ("--output", "--tool")
         said = self.make("--command=make")

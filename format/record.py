@@ -546,13 +546,13 @@ def file_run(args: argparse.Namespace) -> None:
         )
         need(arch, f"{config} names no ARCH")
         compiler = "clang" if find(r"^(CONFIG_CC_IS_CLANG=y)$", text) else "gcc"
-        names = {"configuration": [configuration], "arch": arch}
+        names = {"configuration": sorted(str(configuration).split("+")), "arch": arch}
         subject["build"] = {**names, "compiler": compiler}
         # The .config says which compiler built: no producer names it too.
         named_too = any(one["name"] == compiler for one in entry["tools"])
         entry["tools"] += [] if named_too else [tool(compiler)]
         entry["config"] = "sha256:" + hashlib.sha256(settings).hexdigest()
-        build = directory / str(configuration) / arch / compiler
+        build = directory.joinpath(*names["configuration"], arch, compiler)
     status = int(environ.get("EXIT_STATUS", "0"))
     entry |= {"status": "fail" if status else "pass", "exit": status}
     if printed:
