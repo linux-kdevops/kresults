@@ -712,6 +712,33 @@ class RecordTest(unittest.TestCase):
         self.assertEqual(subject["build"]["configuration"], ["a", "b"])
         self.assertTrue((self.records / build / "config").is_file())
 
+    def test_an_arguments_file_ends_the_command(self) -> None:
+        fragments = "build/core/64bit.config\n\nbuild/my fragments/x.config\n"
+        (self.tree / "build" / ".config.fragments").write_text(fragments)
+        tools = self.tree / "scripts" / "kconfig"
+        tools.mkdir(parents=True)
+        (tools / "merge_config.sh").touch()
+        options = (
+            "--command=scripts/kconfig/merge_config.sh -n -O build",
+            "--arguments-file=build/.config.fragments",
+            "--output=merge_config.sh.json",
+        )
+        self.make(*options)
+        (entry,) = self.entries(f"{BUILD}/merge_config.sh.json")
+        command = (
+            "scripts/kconfig/merge_config.sh -n -O build"
+            " build/core/64bit.config 'build/my fragments/x.config'"
+        )
+        self.assertEqual(entry["command"], command)
+        self.assertEqual(entry["tools"][0]["build"], "tree")
+        (self.tree / "build" / ".config.fragments").write_text("")
+        self.make("--arguments-file=build/.config.fragments")
+        self.assertEqual([one["command"] for one in self.entries()], ["make -s"])
+
+    def test_no_record_with_an_arguments_file_that_is_missing(self) -> None:
+        said = self.make("--arguments-file=build/.config.fragments")
+        self.assert_no_record(said, "build/.config.fragments does not exist")
+
     def test_a_command_names_its_record_and_its_first_tool(self) -> None:
         self.without = ("--output", "--tool")
         said = self.make("--command=make")

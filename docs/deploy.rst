@@ -69,7 +69,10 @@ and ``{configuration}`` in ``--output`` and ``--command`` stands for what
 it holds. So do ``--range-file``, whose ``{range}`` and ``{base}`` name
 the commits a tool read, and ``--file``, whose ``{file}`` names the file
 it worked on; ``{compiler}``, in ``--output`` alone, names the build's
-compiler. ``--message-id-file`` names a file that holds the Message-ID
+compiler. ``--arguments-file`` names a file that holds the arguments
+that change from one run to the next, one a line, and the record's
+command is ``--command`` with each after it, quoted where a shell needs
+it. ``--message-id-file`` names a file that holds the Message-ID
 of the series a tool took, and the record lies under the Message-ID,
 not the tree's commit.
 

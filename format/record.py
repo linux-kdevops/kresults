@@ -23,6 +23,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -264,6 +265,15 @@ def file_of(args: argparse.Namespace) -> str | None:
         f"{path} is no path from the top of the tree",
     )
     return path
+
+
+def arguments_of(args: argparse.Namespace) -> str:
+    """Return the arguments --arguments-file adds to the command (docs/deploy.rst)."""
+    if args.arguments_file is None:
+        return ""
+    need(args.arguments_file.is_file(), f"{args.arguments_file} does not exist")
+    lines = args.arguments_file.read_text("utf-8").splitlines()
+    return "".join(f" {shlex.quote(line)}" for line in lines if line)
 
 
 def placed(
@@ -526,7 +536,11 @@ def file_run(args: argparse.Namespace) -> None:
         args.producer_version = version_of(args.producer_tree)
     subject, name = placed(checked, commit, args.project, worked, message_id_of(args))
     directory = build = args.records / args.project / name
-    entry = ran(args, named(args.command, configuration, checked, worked), top)
+    entry = ran(
+        args,
+        named(args.command, configuration, checked, worked) + arguments_of(args),
+        top,
+    )
     settings = config.read_bytes() if config else b""
     compiler = ""
     if config:
@@ -595,6 +609,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     name.add_argument("--configuration-file", type=Path, metavar="FILE")
     parser.add_argument("--range-file", type=Path, metavar="FILE")
     parser.add_argument("--file", type=Path, metavar="FILE")
+    parser.add_argument("--arguments-file", type=Path, metavar="FILE")
     parser.add_argument("--message-id-file", type=Path, metavar="FILE")
     parser.add_argument("--tool", action="append", default=[], metavar="NAME")
     parser.add_argument("--env", action="append", default=[], metavar="VAR")
