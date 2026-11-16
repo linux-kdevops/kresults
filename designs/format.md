@@ -78,6 +78,11 @@ the version (`format/CHANGES.md`).
   sashiko's, under Apache-2.0. Each project names its own lists, QEMU's
   as well. A series that did not apply has no `series.json`, and so no
   lists.
+- A series that came from no message keeps its cover letter in
+  `series.json`, read from the commit `b4 prep` holds it in. No mail
+  holds the letter of a series not yet sent, and its page would say
+  none was recorded. The commit is no patch, so `commits` leaves it
+  out. One with b4's tracking line that changes a file stays a commit.
 - A run that read commits as patches gives its range, on krecord's
   command line or in a file. The record holds the range
   whole, in `subject.range` and in the command, and lies under its last

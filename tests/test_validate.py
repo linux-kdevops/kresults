@@ -117,6 +117,17 @@ def series(commit: str, message_id: str, *commits: str) -> Json:
     }
 
 
+# The cover letter of a series that came from no message.
+COVER: Json = {
+    "subject": "A topic",
+    "author": "A Developer <dev@example.org>",
+    "date": "2026-09-29T10:19:18Z",
+    "change_id": "20260929-topic-073f2ed13bdc",
+    "revision": 1,
+    "text": "What the series is for.",
+}
+
+
 def posted(message_id: str, **shazam: object) -> Files:
     """Return the files of a series, whose b4 shazam passed unless shazam says."""
     subject = {"message_id": message_id}
@@ -499,6 +510,29 @@ class Validate(unittest.TestCase):
         files = good()
         files[SERIES] = series(TIP, "", TIP)
         self.assertEqual(problems(files), [])
+
+    def test_cover_of_a_commit_from_no_message(self) -> None:
+        files = good()
+        files[SERIES] = series(TIP, "", TIP) | {"cover": dict(COVER)}
+        self.assertEqual(problems(files), [])
+
+    def test_cover_malformed(self) -> None:
+        for field, value, problem in (
+            ("date", "2026-09-29T12:19:18+02:00", "does not match"),
+            ("revision", 0, "less than the minimum"),
+            ("revision", "1", "is not of type 'integer'"),
+            ("subject", "", "non-empty"),
+            ("text", None, "is not of type 'string'"),
+            ("thread", "", "Additional properties"),
+        ):
+            with self.subTest(field=field, value=value):
+                files = good()
+                files[SERIES] = series(TIP, "", TIP) | {"cover": COVER | {field: value}}
+                self.assert_problem(files, SERIES, problem)
+        files = good()
+        files[SERIES] = series(TIP, "", TIP) | {"cover": dict(COVER)}
+        del at(files, SERIES)["cover"]["change_id"]
+        self.assert_problem(files, SERIES, "'change_id' is a required property")
 
     def test_series_last_commit(self) -> None:
         files = good()

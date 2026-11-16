@@ -35,7 +35,7 @@ from email import policy
 from email.errors import MessageError
 from email.message import EmailMessage
 from email.parser import BytesParser
-from email.utils import parseaddr, parsedate_to_datetime
+from email.utils import format_datetime, parseaddr, parsedate_to_datetime
 from enum import Enum
 from html import escape
 from itertools import groupby, pairwise, takewhile
@@ -848,6 +848,8 @@ class Cover:
     message_id: str
     # b4's change-id line of the body, or "" when it has none.
     change_id: str = ""
+    # The text of a cover letter that series.json holds; None of a mailed one.
+    text: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1280,6 +1282,26 @@ def change_id_of(data: bytes) -> str:
     return found[1].decode("ascii", "replace") if found else ""
 
 
+def local_cover(data: object) -> Cover | None:
+    """The cover letter a series.json holds, its date as a mail gives one."""
+    if "cover" not in (series := json_object(data, "not a JSON object")):
+        return None
+    fields = json_object(series["cover"], "cover is not a JSON object")
+    try:
+        date = want(fields, "date", str, "a string")
+        when = datetime.strptime(date, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    except ValueError as error:
+        raise RecordError("the cover's date is no time in UTC") from error
+    return Cover(
+        subject=want(fields, "subject", str, "a string"),
+        author=want(fields, "author", str, "a string"),
+        date=format_datetime(when),
+        message_id="",
+        change_id=want(fields, "change_id", str, "a string"),
+        text=want(fields, "text", str, "a string"),
+    )
+
+
 def load_cover(records: Path, file: Path | None) -> Cover | Unreadable | None:
     if file is None or not regular(file):
         return None
@@ -1403,11 +1425,12 @@ def load_came(records: Path, commit: Path) -> Came:
     if not regular(file):
         return Came()
     try:
-        series = parse_series(read_json(file))
+        series = parse_series(data := read_json(file))
+        cover = None if series.message_id else local_cover(data)
     except RecordError as error:
         return Came(Unreadable(file.relative_to(records).as_posix(), str(error)))
     if not series.message_id:
-        return Came(series)
+        return Came(series, cover)
     mbox = inside(commit.parent, f"{series.message_id}/{MBOX}")
     shazam = inside(commit.parent, f"{series.message_id}/b4/shazam.json")
     return Came(series, load_cover(records, mbox), load_log(records, shazam))
@@ -4173,7 +4196,7 @@ def series_overview(
 <section><h1>{escape(title_of(cover, series))}</h1>
 <p class="muted mono">{commit_html(overview, series)}</p></section>
 <section>{definitions(items)}</section>
-<section><h2>Patches</h2>{patches_table(series)}</section>
+{cover_section(cover)}<section><h2>Patches</h2>{patches_table(series)}</section>
 {builds_table(head, rows)}
 {b4_section(overview.b4_log)}"""
 
@@ -4298,11 +4321,28 @@ def cover_items(
         return [("Cover letter", muted("not recorded")), *thread, *named]
     if isinstance(cover, Unreadable):
         return [("Cover letter", unreadable_html(cover)), *thread, *named]
+    if cover.text is not None:
+        # A cover letter kept in a commit: no message, so no thread or lists.
+        change = [("Change-id", mono(cover.change_id))] if cover.change_id else []
+        return [("Date", escape(cover.date)), *change]
     return [
         ("Date", escape(cover.date) if cover.date else muted("not given")),
         ("Thread", thread_html(cover.message_id or message_id)),
         ("Mailing lists", lists_html(cover, lists)),
     ]
+
+
+def cover_section(cover: Cover | Unreadable | None) -> str:
+    """The text of a cover letter kept in a commit, open when an output shows whole."""
+    if not isinstance(cover, Cover) or not (rows := lines(cover.text or "")):
+        return ""
+    opened = "" if len(rows) > CUT else " open"
+    shown = "\n".join(map(pictured, rows))
+    return (
+        f'<section id="cover"><h2>Cover letter</h2><details{opened}>'
+        f"<summary>{plural(len(rows), 'line')}</summary>"
+        f"<pre>{shown}</pre></details></section>\n"
+    )
 
 
 def thread_html(message_id: str) -> str:

@@ -141,6 +141,64 @@ class SeriesTest(unittest.TestCase):
         self.assertEqual(written["trees"], [{"remote": "public", "url": URL}])
         self.assertGreaterEqual(self.records.stat().st_mtime_ns, before)
 
+    def empty(self, message: str) -> str:
+        """Commit a message with no change, dated, and return the commit."""
+        dated = ("commit", "--quiet", "--date=2026-09-29T12:19:18+02:00")
+        self.git(*dated, "--allow-empty", "--cleanup=verbatim", "-m", message)
+        return self.git("rev-parse", "HEAD")
+
+    def test_a_cover_letter_of_b4_is_no_commit(self) -> None:
+        self.git("switch", "--quiet", "--create", "b4/topic", "v1.2")
+        tracking = {"revision": 2, "change-id": "20260929-topic-073f2ed13bdc"}
+        block = json.dumps({"series": tracking | {"prefixes": ["RFC"]}}, indent=2)
+        text = "First <line>.\n\n# A note of b4's template.\nTo: l@example.org"
+        self.empty(
+            f"A topic\n\n{text}\n\n# More of the template.\n\n"
+            f"{series.TRACKING}\n# This section is used by b4 prep.\n{block}\n"
+        )
+        patch = self.commit("init: change a file", {"kept.c": "int;\n"})
+        self.write("--range=v1.2..")
+        written = self.read(f"v1.2-2-g{patch[:12]}")
+        wanted = {
+            "subject": "A topic",
+            "author": "User <user@example.org>",
+            "date": "2026-09-29T10:19:18Z",
+            "change_id": "20260929-topic-073f2ed13bdc",
+            "revision": 2,
+            "text": "First <line>.\n\nTo: l@example.org",
+        }
+        self.assertEqual(written["cover"], wanted)
+        self.assertEqual([one["commit"] for one in written["commits"]], [patch])
+        self.assertEqual((written["base"], written["commit"]), (self.base, patch))
+
+    def test_a_cover_letter_alone_is_no_series(self) -> None:
+        self.git("switch", "--quiet", "--create", "b4/topic", "v1.2")
+        # A tracking block that cannot be read names no change-id.
+        self.empty(f"A topic\n\nText.\n\n{series.TRACKING}\nnot JSON\n")
+        self.assertIn("holds no commit", self.write("--range=v1.2..", status=1))
+        patch = self.commit("init: change a file", {"kept.c": "int;\n"})
+        self.write("--range=v1.2..")
+        cover = self.read(f"v1.2-2-g{patch[:12]}")["cover"]
+        self.assertEqual((cover["change_id"], cover["revision"]), ("", 1))
+        self.assertEqual(cover["text"], "Text.")
+
+    def test_only_a_first_commit_of_b4_is_a_cover_letter(self) -> None:
+        self.git("switch", "--quiet", "--create", "topic", "v1.2")
+        # An empty commit without b4's line, and one with it that changes a file.
+        first = self.empty("An empty commit\n\n# Kept.\n")
+        self.git("commit", "--quiet", "--allow-empty", "-m", "init: nothing")
+        self.write("--range=v1.2..")
+        written = self.read(f"v1.2-2-g{self.git('rev-parse', 'HEAD')[:12]}")
+        self.assertNotIn("cover", written)
+        self.assertEqual(written["commits"][0]["commit"], first)
+        self.git("switch", "--quiet", "--create", "other", "v1.2")
+        marked = f"init: change a file\n\n{series.TRACKING}\n{{}}\n"
+        patch = self.commit(marked, {"kept.c": "int;\n"})
+        self.write("--range=v1.2..")
+        written = self.read(f"v1.2-1-g{patch[:12]}")
+        self.assertNotIn("cover", written)
+        self.assertEqual(written["commits"][0]["commit"], patch)
+
     def test_a_range_that_starts_with_an_option_is_refused(self) -> None:
         for given in ("--all..", "v1.2..--all", "--output=/dev/null..HEAD"):
             said = self.write(f"--range={given}", status=1)

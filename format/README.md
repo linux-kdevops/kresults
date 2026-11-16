@@ -371,6 +371,12 @@ no message has one as well, with an empty `message_id`:
 - `commits`: the commits the base lacks, oldest first, each with its
   subject, author and last `Link:` trailer. A `series.json` that lists
   none is a base's;
+- `cover`, only of a series that came from no message and has a cover
+  letter: the letter as `b4 prep` keeps it, in a first commit that
+  changes no file and that `commits` leaves out. It holds the commit's
+  `subject`, `author` and author `date`, the `change_id` and `revision`
+  of b4's tracking block, and the `text`: the message between the
+  subject and the tracking block, without the lines that start with `#`;
 - `sources`, `docs` and `added`: the C files and headers the commits
   change, the directories of Documentation with an `index.rst` they
   change, and the files they add.

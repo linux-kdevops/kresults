@@ -1742,6 +1742,8 @@ class SeriesPage(unittest.TestCase):
             put(series.joinpath(build, *MAKE_ALL), record(producer=producer))
             put(series / build / "sparse" / "x.json", record("fail", "w\nnew\n"))
         message_id = THREAD if cover else ""
+        if "cover_kept" in fields:
+            fields["cover"] = fields.pop("cover_kept")
         put(series / "series.json", series_json(patch, message_id=message_id, **fields))
         if cover:
             mbox = self.records / "linux" / THREAD / "b4" / "mbox.mbx"
@@ -2110,6 +2112,45 @@ class SeriesPage(unittest.TestCase):
         search = (self.output / "search.html").read_text(encoding="utf-8")
         self.assertIn(' data-lists="linux-block@vger.kernel.org" ', search)
         self.assertNotIn("lkml", search)
+
+    def test_kept_in_a_commit(self) -> None:
+        kept = {
+            "subject": "Support <MAM> & more",
+            "author": "D <d@x>",
+            "date": "2026-09-29T10:19:18Z",
+            "change_id": "20260929-nvme-mam-073f2ed13bdc",
+            "revision": 1,
+            "text": "NVMe has <2> modes & more.\n\nTo: A <a@x>",
+        }
+        self.make(cover=False, link=None, revision=None, cover_kept=kept)
+        html = self.page("linux", "v1-1-gabc")
+        self.assertIn("<h1>Support &lt;MAM&gt; &amp; more</h1>", html)
+        self.assertIn("<dt>Author</dt><dd>D &lt;d@x&gt;</dd>", html)
+        self.assertIn("<dt>Date</dt><dd>Tue, 29 Sep 2026 10:19:18 +0000</dd>", html)
+        change = '<span class="mono">20260929-nvme-mam-073f2ed13bdc</span>'
+        self.assertIn(f"<dt>Change-id</dt><dd>{change}</dd>", html)
+        self.assertNotIn("<dt>Thread</dt>", html)
+        self.assertNotIn("<dt>Cover letter</dt>", html)
+        self.assertIn(
+            '<section id="cover"><h2>Cover letter</h2><details open>'
+            "<summary>3 lines</summary>"
+            "<pre>NVMe has &lt;2&gt; modes &amp; more.\n\nTo: A &lt;a@x&gt;</pre>",
+            html,
+        )
+        self.assertIn("<td>1/1</td><td>nvme: x</td>", html)
+        build = self.page("linux", "v1-1-gabc", *B1.split("/"))
+        self.assertIn("<h1>Support &lt;MAM&gt; &amp; more</h1>", build)
+        self.assertNotIn('id="cover"', build)
+        self.assertIn(">Support &lt;MAM&gt; &amp; more</a>", self.page())
+        self.assertNotIn("no cover letter", self.page())
+
+    def test_kept_in_a_commit_and_long(self) -> None:
+        kept = {"subject": "s", "author": "D <d@x>", "date": "2026-09-29T10:19:18Z"}
+        kept |= {"change_id": "", "revision": 1, "text": "line\n" * 51}
+        self.make(cover=False, link=None, revision=None, cover_kept=kept)
+        html = self.page("linux", "v1-1-gabc")
+        self.assertIn("<details><summary>51 lines</summary><pre>line\n", html)
+        self.assertNotIn("<dt>Change-id</dt>", html)
 
     def test_absent(self) -> None:
         self.make(cover=False, link=None, revision=None)

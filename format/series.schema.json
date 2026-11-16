@@ -120,6 +120,47 @@
         }
       }
     },
+    "cover": {
+      "description": "The cover letter of a series that came from no message, as b4 prep keeps it in the first commit of its branch: a commit that changes no file, which commits leaves out",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subject",
+        "author",
+        "date",
+        "change_id",
+        "revision",
+        "text"
+      ],
+      "properties": {
+        "subject": {
+          "type": "string",
+          "minLength": 1
+        },
+        "author": {
+          "description": "Name <email>, the commit's author",
+          "type": "string"
+        },
+        "date": {
+          "description": "The commit's author date, in UTC",
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "change_id": {
+          "description": "b4's change-id of the series; empty when its tracking block names none",
+          "type": "string"
+        },
+        "revision": {
+          "description": "The revision b4 tracks, 1 when its tracking block names none",
+          "type": "integer",
+          "minimum": 1
+        },
+        "text": {
+          "description": "The message after its subject, up to b4's tracking block, without the lines that start with # and the blank lines at either end",
+          "type": "string"
+        }
+      }
+    },
     "sources": {
       "description": "The C files and headers the series changes",
       "$ref": "#/definitions/paths"

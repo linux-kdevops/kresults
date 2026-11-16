@@ -15,12 +15,17 @@ there is none and exit 1.
 """
 
 import argparse
+import json
 import os
 import sys
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 
 from record import Json, NoRecordError, need, placed, run, state, whole, write
+
+# The line b4 prep starts its tracking block with, in a cover letter's commit.
+TRACKING = "--- b4-submit-tracking ---"
 
 
 def named(commit: str, project: str) -> str:
@@ -62,6 +67,35 @@ def changed(base: str, tip: str, *options: str) -> list[str]:
     return sorted(run("git", "diff", "--name-only", *options, base, tip).splitlines())
 
 
+def cover_of(commit: str) -> Json | None:
+    """Return the cover letter b4 prep keeps in a commit, or None of another.
+
+    Its commit changes no file, and its message holds b4's tracking block.
+    """
+    form = "--format=%an <%ae>%x1f%at%x1f%B"
+    author, at, message = run("git", "log", "-1", form, commit).split("\x1f", 2)
+    rows = message.split("\n")
+    if TRACKING not in rows or changed(f"{commit}^", commit):
+        return None
+    end = rows.index(TRACKING)
+    # b4 drops its template's lines, which start with #, when it sends.
+    text, block = (
+        "\n".join(row for row in part if not row.startswith("#"))
+        for part in (rows[1:end], rows[end + 1 :])
+    )
+    try:
+        tracked = dict(json.loads(block)["series"])
+    except (ValueError, KeyError, TypeError):
+        tracked = {}
+    revision = tracked.get("revision")
+    when = datetime.fromtimestamp(int(at), UTC)
+    cover: Json = {"subject": rows[0], "author": author}
+    cover |= {"date": when.strftime("%Y-%m-%dT%H:%M:%SZ")}
+    cover |= {"change_id": str(tracked.get("change-id") or "")}
+    cover |= {"revision": revision if type(revision) is int and revision > 0 else 1}
+    return cover | {"text": text.strip("\n")}
+
+
 def books_of(files: Sequence[str], tip: str) -> list[str]:
     """Return the directories of Documentation with an index.rst that hold a file."""
     parts = [file.split("/") for file in files if file.startswith("Documentation/")]
@@ -81,6 +115,9 @@ def series_of(range_: str, project: str) -> tuple[str, Json]:
     ancestor = run("git", "merge-base", base, tip) == base
     need(ancestor, f"{given} is no ancestor of {last or 'HEAD'}")
     commits = commits_of(base, tip)
+    # A cover letter is no patch.
+    if cover := cover_of(commits[0]["commit"]) if commits else None:
+        del commits[0]
     need(commits, f"{range_} holds no commit")
     ref = last
     if last in ("", "HEAD"):
@@ -90,7 +127,7 @@ def series_of(range_: str, project: str) -> tuple[str, Json]:
     series: Json = {"schema": 1, "commit": tip, "message_id": "", "ref": ref}
     series |= {"trees": trees_of(tip), "base": base}
     series |= {"base_name": named(base, project), "base_trees": trees_of(base)}
-    series |= {"commits": commits}
+    series |= {"commits": commits} | ({"cover": cover} if cover else {})
     series |= {"sources": [file for file in files if file.endswith((".c", ".h"))]}
     series |= {"docs": books_of(files, tip)}
     series |= {"added": changed(base, tip, "--no-renames", "--diff-filter=A")}
