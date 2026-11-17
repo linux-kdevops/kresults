@@ -22,7 +22,6 @@ import validate
 
 type Json = dict[str, Any]
 
-UNIT = "0123456789abcdef0123456789abcdef"
 NAME = "example\\x2dbuild@x.service"
 STARTED = 1767323045
 GCC = (
@@ -38,7 +37,9 @@ MAKE = f"{BUILD}/make/all.json"
 CHECKPATCH = "linux/v1.2/checkpatch.pl.json"
 # The programs record runs, but for git, as scripts at the front of PATH.
 FAKES = {
-    "journalctl": '[ "$1" = --sync ] && exit 1\nexec cat "$JOURNAL"\n',
+    # The manager's answer for the unit, the last word asked of it.
+    "systemctl": f"for unit; do :; done\n[ \"$unit\" = '{NAME}' ] || exit 1\n"
+    f"echo @{STARTED}\n",
     "make": "echo GNU Make 4.4.1\necho Built for x86_64-pc-linux-gnu\n",
     "gcc": "echo 'gcc (Debian 14.2.0-19) 14.2.0'\n",
     "clang": "echo 'Debian clang version 19.1.7 (3+b1)'\n",
@@ -61,16 +62,11 @@ def tool(name: str, version: str) -> Json:
     return {"name": name, "version": version, "build": "debian:example-tools 1.0-2"}
 
 
-def printed(message: object) -> Json:
-    """Return the journal's entry of a line the command printed."""
-    stamp = str((STARTED + 1) * 10**6)
-    line = {"_SYSTEMD_INVOCATION_ID": UNIT, "MESSAGE": message}
-    line |= {"SYSLOG_IDENTIFIER": NAME}
-    return {**line, "__REALTIME_TIMESTAMP": stamp}
+def printed(line: str | bytes) -> bytes:
+    """Return a line the command printed, as the unit's file holds it."""
+    return (line.encode() if isinstance(line, str) else line) + b"\n"
 
 
-# What systemd-cat --stderr-priority=warning files: a line of standard output,
-# one of standard error, and one the command sent at a level of its own.
 # The files of a unit's cgroup, as the kernel writes them.
 PRESSURE = "some avg10=0.00 avg60=0.00 avg300=0.00 total={}\nfull avg10=0.00 total=9\n"
 CGROUP = {
@@ -114,19 +110,6 @@ RESOURCES = {
     "tasks": {"peak": 17},
 }
 
-LEVELS = (
-    printed("CC a.o") | {"PRIORITY": "6"},
-    printed("a.c:1: warning") | {"PRIORITY": "4"},
-    printed("b.c:2: error") | {"PRIORITY": "3"},
-)
-
-
-def manager(job: str) -> Json:
-    """Return the journal's entry of the manager's message on a job of the unit."""
-    stamp = str(STARTED * 10**6)
-    line = {"USER_INVOCATION_ID": UNIT, "JOB_TYPE": job, "MESSAGE": "Started."}
-    return {**line, "_SYSTEMD_INVOCATION_ID": 32 * "f", "__REALTIME_TIMESTAMP": stamp}
-
 
 @unittest.skipUnless(shutil.which("git"), "record reads the tree with git")
 class RecordTest(unittest.TestCase):
@@ -157,8 +140,6 @@ class RecordTest(unittest.TestCase):
             "GIT_CONFIG_GLOBAL": str(self.gitconfig),
             "GIT_CONFIG_NOSYSTEM": "1",
             "GIT_CEILING_DIRECTORIES": str(self.root),
-            "JOURNAL": str(self.root / "journal"),
-            "INVOCATION_ID": UNIT,
             "KCFLAGS": "-Wextra",
             "CROSS_COMPILE": "",
         }
@@ -172,6 +153,9 @@ class RecordTest(unittest.TestCase):
         self.config = self.tree / "build" / ".config"
         self.config.parent.mkdir()
         self.config.write_text(GCC)
+        # The file the unit's standard error appends to, which no run that
+        # printed nothing has.
+        self.printed = self.root / "stderr"
         # The options a test has record run without: each is given otherwise.
         self.without: tuple[str, ...] = ()
 
@@ -184,15 +168,13 @@ class RecordTest(unittest.TestCase):
         )
         return done.stdout.strip()
 
-    def file(
-        self, *journal: Json, options: tuple[str, ...] = (), **environ: str
-    ) -> str:
-        """Run record after a unit that left a journal, and return what it printed."""
-        entries = [manager("start"), *journal, manager("stop")]
-        Path(self.environ["JOURNAL"]).write_text(
-            "".join(json.dumps(entry) + "\n" for entry in entries)
-        )
+    def file(self, *lines: bytes, options: tuple[str, ...] = (), **environ: str) -> str:
+        """Run record after a unit that printed lines, and return what it printed."""
+        self.printed.unlink(missing_ok=True)
+        if lines:
+            self.printed.write_bytes(b"".join(lines))
         argv = [f"--records={self.records}", "--producer=example-ci", "--run=run-1"]
+        argv += [f"--output-file={self.printed}"]
         argv += ["--producer-version=1.0", "--env=KCFLAGS", "--env=CROSS_COMPILE"]
         status = {"EXIT_CODE": "exited", "EXIT_STATUS": "0", **environ}
         with (
@@ -205,16 +187,16 @@ class RecordTest(unittest.TestCase):
             self.assertEqual(record.main(kept), 0)
         return stdout.getvalue()
 
-    def make(self, *journal: Json | str, **environ: str) -> str:
+    def make(self, *printed: bytes | str, **environ: str) -> str:
         """Run record after make in the build, and return what it printed.
 
-        A string among the journal's entries is one more option to record.
+        A string among the lines make printed is one more option to record.
         """
         build = ("--config=build/.config", "--configuration=tinyconfig")
         options = ("--output=make/all.json", "--command=make -s", "--tool=make")
-        more = tuple(extra for extra in journal if isinstance(extra, str))
-        entries = [entry for entry in journal if not isinstance(entry, str)]
-        return self.file(*entries, options=(*build, *options, *more), **environ)
+        more = tuple(extra for extra in printed if isinstance(extra, str))
+        lines = [line for line in printed if not isinstance(line, str)]
+        return self.file(*lines, options=(*build, *options, *more), **environ)
 
     def checkpatch(self, range_: str) -> tuple[str, ...]:
         """Return the options of record after checkpatch.pl read a range."""
@@ -525,54 +507,43 @@ class RecordTest(unittest.TestCase):
         self.assertEqual(self.read(path)["subject"], subject)
 
     def test_a_line_that_is_not_utf8(self) -> None:
-        self.make(printed(list(b"caf\xe9 au lait")))
+        self.make(printed(b"caf\xe9 au lait"))
         (entry,) = self.entries()
-        self.assertEqual(entry["output"], "caf� au lait\n")
+        self.assertEqual(entry["output"], "caf\ufffd au lait\n")
 
-    def test_a_priority_keeps_the_lines_at_least_that_severe(self) -> None:
-        self.make(*LEVELS, "--priority=warning")
-        (entry,) = self.entries()
-        self.assertEqual(entry["output"], "a.c:1: warning\nb.c:2: error\n")
-
-    def test_all_lines_are_kept_without_a_priority(self) -> None:
-        self.make(*LEVELS)
-        (entry,) = self.entries()
-        self.assertEqual(entry["output"], "CC a.o\na.c:1: warning\nb.c:2: error\n")
-
-    def test_a_line_of_no_priority_is_at_info(self) -> None:
-        self.make(printed("CC a.o"), LEVELS[2], "--priority=warning")
-        (entry,) = self.entries()
-        self.assertEqual(entry["output"], "b.c:2: error\n")
-
-    def test_the_journal_is_asked_to_drop_the_lines_below_the_level(self) -> None:
-        # The read of the unit's lines names the level, and the fake serves
-        # none without it: the journal filters, so a run that printed much
-        # is not read whole only to be thrown away.
-        ask = (
-            '[ "$1" = --sync ] && exit 1\n'
-            'case " $* " in *"SYSLOG_IDENTIFIER"*)\n'
-            '\tcase " $* " in *"--priority=4"*) exec cat "$JOURNAL" ;; esac\n'
-            "\texit 0\n"
-            "\t;;\n"
-            "esac\n"
-            'exec cat "$JOURNAL"\n'
+    def test_the_files_given_in_their_order(self) -> None:
+        # A path that is not absolute is from the working directory, and a
+        # last line without its newline is a line.
+        (self.tree / "build" / "stdout").write_bytes(b"CC a.o\nLD vmlinux")
+        self.make(
+            printed("a.c:1: warning"),
+            "--output-file=build/stdout",
+            f"--output-file={self.printed}",
         )
-        journalctl = self.root / "bin" / "journalctl"
-        journalctl.write_text(f"#!/bin/sh\n{ask}")
-        journalctl.chmod(0o755)
-        self.make(*LEVELS, "--priority=warning")
         (entry,) = self.entries()
-        self.assertEqual(entry["output"], "a.c:1: warning\nb.c:2: error\n")
+        output = "a.c:1: warning\nCC a.o\nLD vmlinux\na.c:1: warning\n"
+        self.assertEqual(entry["output"], output)
 
-    def test_the_identifier_finds_a_line_journald_names_no_unit_on(self) -> None:
-        lost = printed("ERROR: example")
-        del lost["_SYSTEMD_INVOCATION_ID"]
-        before = {"__REALTIME_TIMESTAMP": str(STARTED * 10**6 - 1)}
-        earlier = lost | before | {"MESSAGE": "record: of the run before"}
-        other = printed("of another run") | {"_SYSTEMD_INVOCATION_ID": 32 * "e"}
-        self.make(earlier, lost, other)
+    def test_a_file_that_is_missing_holds_no_line(self) -> None:
+        self.make("--output-file=build/none")
+        self.assertFalse(self.printed.exists())
+        self.assertNotIn("output", self.entries()[0])
+        self.make(printed("a.c:1: warning"), "--output-file=build/none")
+        self.assertEqual(self.entries()[1]["output"], "a.c:1: warning\n")
+
+    def test_an_empty_line_between_two_is_kept(self) -> None:
+        self.make(printed("a.c:1: warning"), printed(""), printed("b.c:2: error"))
         (entry,) = self.entries()
-        self.assertEqual(entry["output"], "ERROR: example\n")
+        self.assertEqual(entry["output"], "a.c:1: warning\n\nb.c:2: error\n")
+
+    def test_no_output_of_empty_lines_alone(self) -> None:
+        self.make(printed(""), printed(""))
+        self.assertNotIn("output", self.entries()[0])
+
+    def test_no_output_without_a_file_named(self) -> None:
+        self.without = ("--output-file",)
+        self.make(printed("a.c:1: warning"))
+        self.assertNotIn("output", self.entries()[0])
 
     def test_the_config_names_the_machine_not_the_run(self) -> None:
         self.config.write_text(CLANG)
@@ -612,11 +583,12 @@ class RecordTest(unittest.TestCase):
             len(self.entries(f"linux/{name}/tinyconfig/x86_64/gcc/make/all.json")), 1
         )
 
-    def test_started_without_a_start_message(self) -> None:
-        with mock.patch.object(sys.modules[__name__], "manager", printed):
+    def test_started_is_now_when_the_manager_names_no_time(self) -> None:
+        (self.root / "bin" / "systemctl").write_text("#!/bin/sh\nexit 1\n")
+        with mock.patch.object(record.time, "time", return_value=STARTED + 60):
             self.make()
         (entry,) = self.entries()
-        self.assertEqual(entry["invocations"][0]["started"], "2026-01-02T03:04:06Z")
+        self.assertEqual(entry["invocations"][0]["started"], "2026-01-02T03:05:05Z")
 
     def test_what_the_kernel_counted_of_the_cgroup(self) -> None:
         self.cgroup()

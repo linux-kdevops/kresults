@@ -7,11 +7,12 @@
 """File one run of a command as a record under --records (README.md).
 
 Run as the ExecStopPost= of the transient systemd user unit that ran the
-command, in the tree it ran on. The journal holds what the command printed,
-each line under the unit's name as its identifier.
+command, in the tree it ran on. The unit's StandardOutput= and StandardError=
+append to files, and --output-file names those the record's output is read
+from.
 
-    systemd-run --user --unit=NAME --wait -p ExecStopPost='krecord ...' \
-        systemd-cat --identifier=NAME.service make
+    systemd-run --user --unit=NAME --wait -p StandardError=append:FILE \
+        -p ExecStopPost='krecord --output-file FILE ...' make
 
 Print each file written, or why the run leaves no record. Exit 0 either way:
 a failing ExecStopPost= would change the unit's result.
@@ -32,7 +33,7 @@ import time
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 type Json = dict[str, Any]
 
@@ -120,8 +121,6 @@ DESCRIBE = re.compile(r"(?<!\S)\S*-g[0-9a-f]{7,}(?:-dirty)?(?!\S)")
 # A Message-ID as the schema allows one (record.schema.json): a series
 # whose Message-ID holds a slash is not recorded.
 MESSAGE = re.compile(r"[^<>\s/]+@[^<>\s/]+")
-# syslog's levels by name, each at its number.
-PRIORITIES = ("emerg", "alert", "crit", "err", "warning", "notice", "info", "debug")
 
 
 class NoRecordError(Exception):
@@ -374,49 +373,30 @@ def find(pattern: str, text: str) -> str:
     return found[1] if found else ""
 
 
-def message_of(field: object) -> str:
-    """Return a journal entry's line, which is a list of bytes when not UTF-8."""
-    if isinstance(field, list):
-        return bytes(cast("list[int]", field)).decode(errors="replace")
-    return field if isinstance(field, str) else ""
+def printed_in(files: Sequence[Path]) -> list[str]:
+    """Return the lines the unit's command printed to files, in the files' order.
 
-
-def journal(invocation_id: str, level: int | None = None) -> tuple[list[str], int]:
-    """Return the lines a unit's command printed, and its start in microseconds.
-
-    With a level, only the lines at that priority or a more severe one.
+    A file that does not exist holds no line: the command was killed before
+    it wrote.
     """
-    run("journalctl", "--sync")
-    query = ("journalctl", "--user", "--no-pager", "--output=json")
-    unit = f"INVOCATION_ID={invocation_id}"
-    found = run(*query, f"_SYSTEMD_{unit}", "+", f"USER_{unit}")
-    entries: list[Json] = [json.loads(line) for line in found.splitlines()]
-    # The manager's start message has the time; without one, the first line's.
-    by_manager = [entry for entry in entries if entry.get("JOB_TYPE") == "start"]
-    first = (by_manager or entries or [{}])[0]
-    started = int(first.get("__REALTIME_TIMESTAMP", time.time_ns() // 1000))
-    # journald names no unit on a line whose writer has exited, so the unit's
-    # name as the identifier finds the lines: those since the start, of no
-    # other run. The manager's own are under its name, and this program's and
-    # those of its earlier runs are not yet written, or older than the start.
+    printed: list[str] = []
+    for file in files:
+        try:
+            text = file.read_bytes().decode(errors="replace")
+        except FileNotFoundError:
+            continue
+        # Only a newline ends a line, and the last one starts no line.
+        printed += text.removesuffix("\n").split("\n") if text else []
+    return printed
+
+
+def started_at() -> int:
+    """Return when the unit's command started, in seconds since the epoch."""
+    # The cgroup's last part is the unit's name.
     name = Path(cgroup()).name
-    # The journal drops the lines below the level itself, so krecord reads
-    # only those the record keeps: the progress of a run that printed
-    # much is never read to be thrown away.
-    wanted = () if level is None else (f"--priority={level}",)
-    found = run(
-        *query, f"SYSLOG_IDENTIFIER={name}", f"--since=@{started // 10**6}", *wanted
-    )
-    printed = [
-        message_of(entry.get("MESSAGE"))
-        for entry in map(json.loads, found.splitlines())
-        if entry.get("SYSLOG_IDENTIFIER") == name
-        and int(entry["__REALTIME_TIMESTAMP"]) >= started
-        and entry.get("_SYSTEMD_INVOCATION_ID", invocation_id) == invocation_id
-        # A line the journal gives no priority is at info.
-        and (level is None or int(entry.get("PRIORITY", "6")) <= level)
-    ]
-    return printed, started
+    show = ("systemctl", "--user", "show", "--value", "--timestamp=unix")
+    at = name and run(*show, "--property=ExecMainStartTimestamp", "--", name)
+    return int(find(r"^@(\d+)$", at) or time.time())
 
 
 def build_of(path: str, version: str = "") -> str:
@@ -485,14 +465,14 @@ def resources() -> Json:
 
 def invocation(args: argparse.Namespace, lab: str, started: int) -> Json:
     """Return who ran the command, when and where, and what it used."""
-    at = datetime.fromtimestamp(started // 10**6, UTC)
+    at = datetime.fromtimestamp(started, UTC)
     memory = find(r"^MemTotal:\s*(\d+) kB$", MEMINFO.read_text("utf-8"))
     return {
         "producer": {"name": args.producer, "version": args.producer_version},
         "origin": lab,
         "run": args.run,
         "started": at.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "seconds": max(0, int(time.time() - started / 10**6)),
+        "seconds": max(0, int(time.time() - started)),
         **resources(),
         "machine": {
             "arch": os.uname().machine,
@@ -565,8 +545,10 @@ def built(config: Path, settings: bytes, configuration: str) -> Json:
 def file_run(args: argparse.Namespace) -> None:
     """File the run the environment names, or raise why it leaves no record."""
     environ = os.environ
-    level = PRIORITIES.index(args.priority) if args.priority else None
-    printed, started = journal(environ.get("INVOCATION_ID", ""), level)
+    # The files take what this program prints too, as it inherits the unit's
+    # standard output and error: read them before anything is printed.
+    printed = printed_in(args.output_file)
+    started = started_at()
     lab = run("git", "config", "--global", "--get", "kresults.origin")
     top, _, commit = run("git", "rev-parse", "--show-toplevel", "HEAD").partition("\n")
     config: Path | None = args.config
@@ -598,7 +580,7 @@ def file_run(args: argparse.Namespace) -> None:
         build = directory.joinpath(*names["configuration"], names["arch"], compiler)
     status = int(environ.get("EXIT_STATUS", "0"))
     entry |= {"status": "fail" if status else "pass", "exit": status}
-    if printed:
+    if any(printed):
         entry["output"] = output_of(printed, top)
     entry["invocations"] = [invocation(args, lab, started)]
     # Without a name given, commands.json names the record of the command.
@@ -644,7 +626,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--message-id-file", type=Path, metavar="FILE")
     parser.add_argument("--tool", action="append", default=[], metavar="NAME")
     parser.add_argument("--env", action="append", default=[], metavar="VAR")
-    parser.add_argument("--priority", choices=PRIORITIES, metavar="LEVEL")
+    parser.add_argument(
+        "--output-file", type=Path, action="append", default=[], metavar="FILE"
+    )
     args = parser.parse_args(argv)
     if args.config and not (args.configuration or args.configuration_file):
         parser.error("--config needs --configuration or --configuration-file")

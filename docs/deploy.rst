@@ -42,20 +42,29 @@ the command as a transient `systemd`_ user unit, in the tree, and name
        --setenv=PATH \
        --working-directory="$PWD" \
        --property=StateDirectory=krecords \
+       --property=StandardError=append:"$PWD/build/make.stderr" \
        --property=ExecStopPost='-env krecord --command make
            --config build/.config --configuration tinyconfig
-           --priority warning --producer by-hand --producer-version 1' \
-       systemd-cat --identifier=make-build.service \
-           --stderr-priority=warning make O=build
+           --output-file build/make.stderr
+           --producer by-hand --producer-version 1' \
+       make O=build
 
 systemd runs ``krecord`` when the command exits, pass or fail, with its
-exit status. ``krecord`` reads from your journal the lines since the unit
-started whose identifier is the unit's name, which ``--identifier`` gives
-them. It reads what the run took from the unit's cgroup, and the commit,
-the ``.config`` and the tools' builds from the tree and the host.
-:cmd:`systemd-cat` logs make's standard error as warnings and
-``--priority warning`` keeps only those, so the journal has make's
-progress and the record does not.
+exit status. The record's output is the lines of each ``--output-file``,
+in the order given: a path from the working directory, or an absolute
+one. Here that is make's standard error, so the journal has make's
+progress and the record does not. A tool that reports on standard output,
+as ``checkpatch.pl`` does, has a ``StandardOutput=append:`` file too,
+named first. A file that does not exist holds no line. ``krecord`` reads
+the rest from the unit: what the run took from its cgroup, when it started
+from :cmd:`systemctl`, and the commit, the ``.config`` and the tools'
+builds from the tree and the host.
+
+The files take what ``krecord`` itself prints, which is in no record, and
+stay when the unit ends: remove them before the unit runs again, or
+``append:`` adds the next run's lines to them. ``truncate:`` empties a
+file again before ``ExecStopPost=`` runs, and leaves ``krecord`` nothing to
+read.
 
 Records go to ``~/.local/state/krecords`` unless ``--records`` names
 another tree, and the run is ``manual`` unless ``--run`` names it. The
@@ -82,9 +91,6 @@ not the tree's commit.
 A run the format cannot file leaves no record: ``krecord`` says why in one
 line and exits 0. That is a run with no lab named, outside a Git work
 tree, whose ``--config`` file is missing, or that a signal ended.
-
-``krecord`` reads your own journal, which `journald`_ keeps only when it
-stores on disk: ``/var/log/journal/*/user-UID.journal`` exists.
 
 ``kseries`` writes the ``series.json`` of commits that came from no
 message. Run it at the top of the tree with their range, ``BASE..TIP``, or
@@ -197,7 +203,6 @@ one failed.
 
 .. _Git: https://git-scm.com
 .. _inotify: https://man7.org/linux/man-pages/man7/inotify.7.html
-.. _journald: https://www.freedesktop.org/software/systemd/man/latest/systemd-journald.service.html
 .. _jsonschema: https://python-jsonschema.readthedocs.io/
 .. _Nix: https://nixos.org
 .. _Python: https://www.python.org
