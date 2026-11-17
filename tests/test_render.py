@@ -27,7 +27,7 @@ import validate
 from render import Change
 
 FIXTURES = Path(__file__).resolve().parent
-LINK = "https://patch.msgid.link/20260929-nvme-mam-v1-1-48dcbe79cece@samsung.com"
+LINK = "https://patch.msgid.link/20260101-topic-v1-1-0123456789ab@example.org"
 SHA = "0123456789abcdef" * 2 + "01234567"
 CHECK = f'<span class="pass" title="{render.CLEAN}">\u2713</span>'
 SERIES = render.Series("b" * 40, "v1", (render.Commit("c" * 40, "s", "A B <a@x>"),), ())
@@ -1138,7 +1138,7 @@ class NotApplied(unittest.TestCase):
         found = render.load_unapplied(self.records, {}, trees)
         self.assertEqual([item.name for item in found], [MBOX_ID])
         overview = self.page("linux", "v1-1-gx")
-        subject = "[PATCH RFC 0/2] Support for Multiple Atomicity Mode"
+        subject = "[PATCH RFC 0/2] Support for wide discards"
         self.assertIn(f"<h1>{subject}</h1>", overview)
         self.assertIn("<pre>Applying: mctp: accept MSG_CMSG_COMPAT", overview)
 
@@ -1146,22 +1146,22 @@ class NotApplied(unittest.TestCase):
         none = '<span class="muted">none</span>'
         page = self.page("linux", MESSAGE_ID)
         self.assertIn(f"<dt>Mailing lists</dt><dd>{none}</dd>", page)
-        subject = "[PATCH RFC 0/2] Support for Multiple Atomicity Mode"
+        subject = "[PATCH RFC 0/2] Support for wide discards"
         index = self.page()
         self.assertIn(f'{subject}</a><div class="lists">{none}</div>', index)
         self.assertNotIn('<option value="linux-', index)
         search = (self.output / "search.html").read_text(encoding="utf-8")
         self.assertIn(
-            ' data-lists="" data-week="2026-W40" data-outcome="unapplied"', search
+            ' data-lists="" data-week="2026-W01" data-outcome="unapplied"', search
         )
 
     def test_b4_with_cover(self) -> None:
         page = self.page("linux", MESSAGE_ID)
-        subject = "[PATCH RFC 0/2] Support for Multiple Atomicity Mode"
+        subject = "[PATCH RFC 0/2] Support for wide discards"
         self.assertIn(f"<h1>{subject}</h1>", page)
         self.assertIn("b4 could not apply the series", page)
-        self.assertIn("<dd>Daniel Gomez &lt;da.gomez@kernel.org&gt;</dd>", page)
-        thread = "20260929-nvme-mam-v1-0-48dcbe79cece@samsung.com"
+        self.assertIn("<dd>A Developer &lt;dev@example.org&gt;</dd>", page)
+        thread = "20260101-topic-v1-0-0123456789ab@example.org"
         self.assertIn(f'<a href="https://lore.kernel.org/all/{thread}/"', page)
         self.assertIn(f"$ b4 shazam {MESSAGE_ID}", page)
         self.assertIn('<section><h2>b4</h2><details id="r-b4-shazam" open>', page)
@@ -1210,11 +1210,11 @@ class NotApplied(unittest.TestCase):
     def test_index_rows(self) -> None:
         index = self.page()
         href = "./linux/20261103-mctp-v1-1-0123abcd%2Bx%3Dy%40kernel.org/index.html"
-        subject = "[PATCH RFC 0/2] Support for Multiple Atomicity Mode"
+        subject = "[PATCH RFC 0/2] Support for wide discards"
         self.assertIn(f'<td><a href="{href}" class="row-link">{subject}</a>', index)
         self.assertIn(
-            '<td>Daniel Gomez<div class="text-muted-sm">da.gomez@kernel.org</div></td>'
-            '<td>2026-09-29<div class="text-muted-sm">13:17 +0200</div></td>'
+            '<td>A Developer<div class="text-muted-sm">dev@example.org</div></td>'
+            '<td>2026-01-01<div class="text-muted-sm">09:30 +0100</div></td>'
             '<td class="num"></td><td></td>'
             '<td><span class="badge fail">cannot apply</span></td></tr>',
             index,
@@ -1229,7 +1229,7 @@ class NotApplied(unittest.TestCase):
         searched = re.findall(r'<tr data-search="([^"]*)"', index)
         self.assertIn(MBOX_ID.lower(), searched)
         b4 = next(text for text in searched if MESSAGE_ID.lower() in text)
-        for word in (subject.lower(), "daniel gomez", "da.gomez@kernel.org"):
+        for word in (subject.lower(), "a developer", "dev@example.org"):
             self.assertIn(word, b4)
         self.assertNotIn("lkml", b4)
 
@@ -1338,7 +1338,7 @@ class Findings(unittest.TestCase):
     def test_index_columns(self) -> None:
         cover = render.parse_cover((FIXTURES / "cover.mbx").read_bytes())
         self.assertEqual(
-            render.author_parts(cover, SERIES), ("Daniel Gomez", "da.gomez@kernel.org")
+            render.author_parts(cover, SERIES), ("A Developer", "dev@example.org")
         )
         self.assertEqual(render.author_parts(None, SERIES), ("A B", "a@x"))
         three = render.Series("b", "v1", SERIES.commits * 3, ())
@@ -1349,7 +1349,7 @@ class Findings(unittest.TestCase):
         cover = render.parse_cover((FIXTURES / "cover.mbx").read_bytes())
         self.assertEqual(
             render.date_html(cover),
-            '2026-09-29<div class="text-muted-sm">13:17 +0200</div>',
+            '2026-01-01<div class="text-muted-sm">09:30 +0100</div>',
         )
         unknown = render.Cover("", "", "Tue, 29 Sep 2026 13:17:10 -0000", "")
         self.assertEqual(
@@ -1561,11 +1561,11 @@ class CoverLetter(unittest.TestCase):
         self.assertEqual(
             cover,
             render.Cover(
-                subject="[PATCH RFC 0/2] Support for Multiple Atomicity Mode",
-                author="Daniel Gomez <da.gomez@kernel.org>",
-                date="Tue, 29 Sep 2026 13:17:10 +0200",
-                message_id="<20260929-nvme-mam-v1-0-48dcbe79cece@samsung.com>",
-                change_id="20260929-nvme-mam-073f2ed13bdc",
+                subject="[PATCH RFC 0/2] Support for wide discards",
+                author="A Developer <dev@example.org>",
+                date="Thu, 01 Jan 2026 09:30:00 +0100",
+                message_id="<20260101-topic-v1-0-0123456789ab@example.org>",
+                change_id="20260101-topic-0123456789ab",
             ),
         )
 
@@ -1577,7 +1577,7 @@ class CoverLetter(unittest.TestCase):
             render.parse_cover(b"From: ]t, :a?\x81)\n")
 
     def test_thread_url(self) -> None:
-        bare = "20260929-nvme-mam-v1-0-48dcbe79cece@samsung.com"
+        bare = "20260101-topic-v1-0-0123456789ab@example.org"
         self.assertEqual(
             render.thread_url(f"<{bare}>"), f"https://lore.kernel.org/all/{bare}/"
         )
@@ -1709,7 +1709,7 @@ class CodeLinks(unittest.TestCase):
 
 B1, B2 = "b1/x86_64/clang", "b2/x86_64/clang"
 # The cover letter in FIXTURES, by its Message-ID.
-THREAD = "20260929-nvme-mam-v1-0-48dcbe79cece@samsung.com"
+THREAD = "20260101-topic-v1-0-0123456789ab@example.org"
 # The lists its Cc names, as series.json holds them.
 LISTS = [
     "linux-block@vger.kernel.org",
@@ -2071,10 +2071,10 @@ class SeriesPage(unittest.TestCase):
     def test_present(self) -> None:
         self.make(cover=True, link=LINK, revision=f"{SHA}-dirty", lists=LISTS)
         html = self.page("linux", "v1-1-gabc")
-        subject = "[PATCH RFC 0/2] Support for Multiple Atomicity Mode"
+        subject = "[PATCH RFC 0/2] Support for wide discards"
         self.assertIn(f"<h1>{subject}</h1>", html)
-        self.assertIn("<dd>Daniel Gomez &lt;da.gomez@kernel.org&gt;</dd>", html)
-        self.assertIn("<dd>Tue, 29 Sep 2026 13:17:10 +0200</dd>", html)
+        self.assertIn("<dd>A Developer &lt;dev@example.org&gt;</dd>", html)
+        self.assertIn("<dd>Thu, 01 Jan 2026 09:30:00 +0100</dd>", html)
         self.assertIn(f'<a href="https://lore.kernel.org/all/{THREAD}/"', html)
         lists = (
             '<span class="tag" title="linux-kernel@vger.kernel.org">LKML</span>'
@@ -2092,8 +2092,8 @@ class SeriesPage(unittest.TestCase):
             index,
         )
         self.assertIn(
-            '<td>Daniel Gomez<div class="text-muted-sm">da.gomez@kernel.org</div></td>'
-            '<td>2026-09-29<div class="text-muted-sm">13:17 +0200</div></td>'
+            '<td>A Developer<div class="text-muted-sm">dev@example.org</div></td>'
+            '<td>2026-01-01<div class="text-muted-sm">09:30 +0100</div></td>'
             '<td class="num">1</td>',
             index,
         )
@@ -2115,33 +2115,33 @@ class SeriesPage(unittest.TestCase):
 
     def test_kept_in_a_commit(self) -> None:
         kept = {
-            "subject": "Support <MAM> & more",
+            "subject": "Support <FOO> & more",
             "author": "D <d@x>",
             "date": "2026-09-29T10:19:18Z",
-            "change_id": "20260929-nvme-mam-073f2ed13bdc",
+            "change_id": "20260101-topic-0123456789ab",
             "revision": 1,
-            "text": "NVMe has <2> modes & more.\n\nTo: A <a@x>",
+            "text": "A device has <2> modes & more.\n\nTo: A <a@x>",
         }
         self.make(cover=False, link=None, revision=None, cover_kept=kept)
         html = self.page("linux", "v1-1-gabc")
-        self.assertIn("<h1>Support &lt;MAM&gt; &amp; more</h1>", html)
+        self.assertIn("<h1>Support &lt;FOO&gt; &amp; more</h1>", html)
         self.assertIn("<dt>Author</dt><dd>D &lt;d@x&gt;</dd>", html)
         self.assertIn("<dt>Date</dt><dd>Tue, 29 Sep 2026 10:19:18 +0000</dd>", html)
-        change = '<span class="mono">20260929-nvme-mam-073f2ed13bdc</span>'
+        change = '<span class="mono">20260101-topic-0123456789ab</span>'
         self.assertIn(f"<dt>Change-id</dt><dd>{change}</dd>", html)
         self.assertNotIn("<dt>Thread</dt>", html)
         self.assertNotIn("<dt>Cover letter</dt>", html)
         self.assertIn(
             '<section id="cover"><h2>Cover letter</h2><details open>'
             "<summary>3 lines</summary>"
-            "<pre>NVMe has &lt;2&gt; modes &amp; more.\n\nTo: A &lt;a@x&gt;</pre>",
+            "<pre>A device has &lt;2&gt; modes &amp; more.\n\nTo: A &lt;a@x&gt;</pre>",
             html,
         )
         self.assertIn("<td>1/1</td><td>nvme: x</td>", html)
         build = self.page("linux", "v1-1-gabc", *B1.split("/"))
-        self.assertIn("<h1>Support &lt;MAM&gt; &amp; more</h1>", build)
+        self.assertIn("<h1>Support &lt;FOO&gt; &amp; more</h1>", build)
         self.assertNotIn('id="cover"', build)
-        self.assertIn(">Support &lt;MAM&gt; &amp; more</a>", self.page())
+        self.assertIn(">Support &lt;FOO&gt; &amp; more</a>", self.page())
         self.assertNotIn("no cover letter", self.page())
 
     def test_kept_of_a_series_that_was_posted(self) -> None:
@@ -3634,7 +3634,7 @@ class Report(unittest.TestCase):
         self.assertNotIn("In-Reply-To", text)
         self.assertNotIn("b4 shazam", text)
         linked = mailed("w\n", link=LINK)
-        message_id = "20260929-nvme-mam-v1-1-48dcbe79cece@samsung.com"
+        message_id = "20260101-topic-v1-1-0123456789ab@example.org"
         self.assertIn(f"\nIn-Reply-To: <{message_id}>\n", linked)
         self.assertIn(f"\n$ b4 shazam --add-link {message_id}\n", linked)
         self.assertNotIn("In-Reply-To", mailed("w\n", link="https://e.org/x@y"))

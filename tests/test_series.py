@@ -160,7 +160,7 @@ class SeriesTest(unittest.TestCase):
 
     def test_a_cover_letter_of_b4_is_no_commit(self) -> None:
         self.git("switch", "--quiet", "--create", "b4/topic", "v1.2")
-        tracking = {"revision": 2, "change-id": "20260929-topic-073f2ed13bdc"}
+        tracking = {"revision": 2, "change-id": "20260101-topic-0123456789ab"}
         block = json.dumps({"series": tracking | {"prefixes": ["RFC"]}}, indent=2)
         text = "First <line>.\n\n# A note of b4's template.\nTo: l@example.org"
         self.empty(
@@ -174,7 +174,7 @@ class SeriesTest(unittest.TestCase):
             "subject": "A topic",
             "author": "User <user@example.org>",
             "date": "2026-09-29T10:19:18Z",
-            "change_id": "20260929-topic-073f2ed13bdc",
+            "change_id": "20260101-topic-0123456789ab",
             "revision": 2,
             "text": "First <line>.\n\nTo: l@example.org",
         }

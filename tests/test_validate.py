@@ -122,7 +122,7 @@ COVER: Json = {
     "subject": "A topic",
     "author": "A Developer <dev@example.org>",
     "date": "2026-09-29T10:19:18Z",
-    "change_id": "20260929-topic-073f2ed13bdc",
+    "change_id": "20260101-topic-0123456789ab",
     "revision": 1,
     "text": "What the series is for.",
 }
