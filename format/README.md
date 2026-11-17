@@ -93,10 +93,11 @@ environment. A reader says when their `.config` differs.
 
 `tools` lists the tool the command runs first, then each tool whose
 version changes what it reports: the compiler under sparse, the
-filesystem's utilities under fstests. `version` is the version the tool
-prints of itself, as `sparse --version` does, and is empty for a tool
-that prints none. A patched tool prints the version it was patched
-from, so `build` names the exact build, as one of:
+filesystem's utilities under fstests, the QEMU the machine under test
+runs on under blktests. `version` is the version the tool prints of
+itself, as `sparse --version` does, and is empty for a tool that prints
+none. A patched tool prints the version it was patched from, so `build`
+names the exact build, as one of:
 
 - a Nix store path, `/nix/store/<hash>-sparse-0.6.4`;
 - `git describe` of the source it was built from,
@@ -157,8 +158,9 @@ the command that runs next.
 else 0. A `pass` has an exit status of 0. A `fail` may have one too, for
 a tool that exits 0 whatever it finds, where the producer reads the
 verdict from what the tool printed. A `skip` always has its reason as
-`output`. blktests writes no reason to a test's result, so a test that
-it did not run leaves no record until the reason is kept. A run stopped
+`output`. blktests writes no reason to a test's result, only to its
+standard output: a test that it did not run is a `skip` when the run
+kept what `check` printed, and leaves no record otherwise. A run stopped
 on purpose, as when its producer cancels it, leaves nothing.
 
 ## Output

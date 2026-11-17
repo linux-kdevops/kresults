@@ -7,12 +7,17 @@
 """File the results of one blktests run as records under --records (README.md).
 
 Run in the tree of the kernel under test, once the run has copied its
-results directory and, as machine/ in it, the facts of the machine under
-test: arch, cpuinfo, meminfo, and version, the `git describe` of the
-blktests that ran.
+results directory with, in it:
+
+- machine/, the facts of the machine under test: arch, cpuinfo, meminfo,
+  and version, the `git describe` of the blktests that ran;
+- NAME.stdout, what check printed for each group or test the run asked
+  for, which alone says why a test did not run. Without it such a test
+  leaves no record.
 
     kblktests --results DIR --config build/.config --configuration NAME ...
 
+--qemu names the QEMU the machine under test ran on, a tool of each entry.
 Print each file written, and how many results leave no record with why.
 Exit 0 either way, as krecord does.
 """
@@ -22,12 +27,14 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
 from record import (
+    VERSION,
     Json,
     NoRecordError,
     built,
@@ -42,6 +49,7 @@ from record import (
     run,
     run_of,
     state,
+    tool_of,
     version_of,
     write,
     write_base,
@@ -57,6 +65,13 @@ FACTS = ("arch", "cpuinfo", "meminfo", "version")
 # and its number.
 DEPTH = 3
 DATE = re.compile(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d")
+# An entry's verdict, by the status of a result.
+VERDICTS = {"pass": "pass", "fail": "fail", "not run": "skip"}
+# The line check prints of a test that did not run, on a device or on none.
+# The lines of its reason follow, indented. One of a whole group, loop/***,
+# names no test.
+NOT_RUN = re.compile(r"(\S+/\d+)(?: => (\S+))? \(.*\)\s*\[not run\]")
+INDENT = "    "
 
 
 def results_in(results: Path) -> list[Path]:
@@ -76,6 +91,38 @@ def results_in(results: Path) -> list[Path]:
         for file in found
         if len(file.parts) >= DEPTH and file.parts[0] != "machine"
     ]
+
+
+def reasons_in(results: Path) -> dict[tuple[str, str], list[str]]:
+    """Return why each test did not run, by its device and name, as check printed.
+
+    The last file that names a test gives its reason.
+    """
+    reasons: dict[tuple[str, str], list[str]] = {}
+    for file in sorted(results.glob("*.stdout")):
+        # The reason being read. An indented line of anything else is kept
+        # nowhere.
+        reason: list[str] = []
+        for line in printed_in([file]):
+            if line.startswith(INDENT):
+                reason.append(line.removeprefix(INDENT))
+                continue
+            reason = []
+            if found := NOT_RUN.fullmatch(line):
+                reasons[found[2] or "nodev", found[1]] = reason
+    return reasons
+
+
+def qemu_of(file: Path) -> Json:
+    """Return the QEMU the machine under test ran on, as an entry names a tool."""
+    path = shutil.which(file.resolve()) or ""
+    need(path, f"{file} is no program")
+    printed = run(path, "--version").partition("\n")[0]
+    need(printed, f"{file} prints no version")
+    # QEMU prints its version, then in brackets its package or the describe
+    # name of its source, which holds a version of its own.
+    tool = tool_of("qemu", path, re.sub(r"[()]", " ", printed))
+    return {**tool, "version": find(f"({VERSION.pattern})", printed)}
 
 
 def fields_of(file: Path) -> dict[str, str]:
@@ -105,19 +152,24 @@ def started_of(file: Path, date: str) -> str:
     return at.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def entry_of(file: Path, fields: dict[str, str], ran: Json, top: str) -> Json:
+def entry_of(
+    file: Path, fields: dict[str, str], ran: Json, top: str, reason: Sequence[str]
+) -> Json:
     """Return a result as an entry, less who ran it and on what machine.
 
     The test ran on the device its result lies under: nodev is no device,
-    for a test that makes its own.
+    for a test that makes its own. One that did not run has its reason.
     """
     device, group = file.parent.parent.name, file.parent.name
     status = fields.get("status")
-    need(status in {"pass", "fail"}, f"{file} has the status {status!r}")
+    verdict = VERDICTS.get(status or "")
+    need(verdict, f"{file} has the status {status!r}")
     devices = {} if device == "nodev" else {"TEST_DEVS": f"/dev/{device}"}
     entry: Json = {"tools": ran["tools"], "command": f"check {group}/{file.name}"}
-    entry |= {"env": devices, "config": ran["config"], "status": status, "exit": 0}
-    if status == "fail":
+    entry |= {"env": devices, "config": ran["config"], "status": verdict, "exit": 0}
+    if verdict == "skip":
+        entry["output"] = output_of(reason, top)
+    if verdict == "fail":
         exited = int(fields.get("exit_status") or 0)
         printed = printed_in([file.with_name(f"{file.name}.{end}") for end in FAILURES])
         entry["exit"] = exited or 1
@@ -175,6 +227,7 @@ def file_results(args: argparse.Namespace) -> None:
     build = directory.joinpath(*names["configuration"], names["arch"])
     build /= names["compiler"]
     ran: Json = {"tools": [{"name": "blktests", "version": "", "build": blktests}]}
+    ran["tools"] += [qemu_of(args.qemu)] if args.qemu else []
     ran["config"] = "sha256:" + hashlib.sha256(settings).hexdigest()
     who = {"producer": {"name": args.producer, "version": args.producer_version}}
     who |= {"origin": lab, "run": args.run}
@@ -183,24 +236,25 @@ def file_results(args: argparse.Namespace) -> None:
     need(found, f"{results} holds no result")
     # Every result is read before a record is written: one that cannot be
     # read leaves none.
+    reasons = reasons_in(results)
     runs: list[tuple[Path, Json, Json]] = []
     for file, fields in found:
-        if fields.get("status") == "not run":
+        device, test = file.parent.parent.name, f"{file.parent.name}/{file.name}"
+        reason = reasons.get((device, test), [])
+        # A skip has its reason as output (README.md, "Verdicts").
+        if fields.get("status") == "not run" and not any(reason):
             continue
-        entry = entry_of(file, fields, ran, top)
+        entry = entry_of(file, fields, ran, top, reason)
         entry["invocations"] = [{**who, **entry["invocations"][0], **where}]
-        test = f"{file.parent.name}/{file.name}"
-        filed = build / "blktests" / file.parent.parent.name / f"{test}.json"
+        filed = build / "blktests" / device / f"{test}.json"
         runs.append((filed, {**subject, "test": test}, entry))
     wrote = 0
     for filed, tested, entry in runs:
         if not recorded(filed, tested, entry):
             write(filed, merged(filed, tested, entry))
             wrote += 1
-    # blktests writes why a test did not run to its terminal alone, and a
-    # skip has its reason as output (README.md, "Verdicts").
     left = {
-        "did not run, and their results give no reason": len(found) - len(runs),
+        "did not run, and nothing kept their reason": len(found) - len(runs),
         "are recorded already": len(runs) - wrote,
     }
     for why, count in left.items():
@@ -229,6 +283,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     name = parser.add_mutually_exclusive_group(required=True)
     name.add_argument("--configuration", metavar="NAME")
     name.add_argument("--configuration-file", type=Path, metavar="FILE")
+    parser.add_argument("--qemu", type=Path, metavar="FILE")
     try:
         file_results(parser.parse_args(argv))
     except NoRecordError as why:

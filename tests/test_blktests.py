@@ -18,6 +18,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "format"))
 
 import blktests
+import record
 import validate
 
 type Json = dict[str, Any]
@@ -47,6 +48,20 @@ PASSED = (
 )
 FAILED = PASSED.replace("status\tpass", "status\tfail\nreason\toutput")
 NOT_RUN = "description\tpartscan\ndate\t2026-11-17 19:03:01\nstatus\tnot run\n"
+# What check prints, not on a terminal, of tests that did not run.
+STDOUT = (
+    "loop/004 (partscan)\n"
+    "loop/004 (partscan (twice))                [not run]\n"
+    "    systemd version is older than 259\n"
+    "    and no udev runs\n"
+    "loop/005 (partscan) [passed]\n"
+    "    runtime    ...  0.130s\n"
+    "block/004 => nvme0n1 (discard) [not run]\n"
+    "    the device does not discard\n"
+    "block/*** => nvme0n1 [not run]\n"
+    "    the group needs a module\n"
+)
+QEMU = "QEMU emulator version 11.0.93 (v11.1.0-rc2-19-gc62733676086)"
 INVOCATION = {
     "producer": {"name": "example-ci", "version": "1.0"},
     "origin": "lab-a",
@@ -98,9 +113,9 @@ class BlktestsTest(unittest.TestCase):
         file.parent.mkdir(parents=True, exist_ok=True)
         file.write_text(text)
 
-    def file(self) -> str:
+    def file(self, *options: str) -> str:
         """Run blktests on the results, and return what it printed."""
-        argv = [f"--results={self.results}", f"--records={self.records}"]
+        argv = [f"--results={self.results}", f"--records={self.records}", *options]
         argv += ["--producer=example-ci", "--producer-version=1.0", "--run=run-1"]
         argv += ["--config=build/.config", "--configuration=block-layer"]
         with (
@@ -162,11 +177,57 @@ class BlktestsTest(unittest.TestCase):
         self.result("loop/nodev/loop/001", PASSED)
         self.result("loop/nodev/loop/004", NOT_RUN)
         said = self.file().splitlines()
-        why = "1 of 2 results did not run, and their results give no reason"
+        self.result("loop.stdout", STDOUT.replace("loop/004", "loop/006"))
+        why = "1 of 2 results did not run, and nothing kept their reason"
         self.assertEqual(said[1], f"no record: {why}")
         self.read("blktests/nodev/loop/001.json")
         tests = self.records / BUILD / "blktests" / "nodev" / "loop"
         self.assertEqual([test.name for test in tests.iterdir()], ["001.json"])
+
+    def test_a_test_that_did_not_run_is_a_skip_with_its_reason(self) -> None:
+        self.result("loop/nodev/loop/004", NOT_RUN)
+        self.result("block/nvme0n1/block/004", NOT_RUN)
+        self.result("block/nvme0n1/block/005", NOT_RUN)
+        self.result("block.stdout", STDOUT.replace("discard\n", "discard at all\n"))
+        self.result("loop.stdout", STDOUT)
+        said = self.file().splitlines()
+        why = "1 of 3 results did not run, and nothing kept their reason"
+        self.assertEqual(said[2], f"no record: {why}")
+        reasons = {
+            "nodev/loop/004": "systemd version is older than 259\nand no udev runs\n",
+            "nvme0n1/block/004": "the device does not discard\n",
+        }
+        for test, reason in reasons.items():
+            (entry,) = self.read(f"blktests/{test}.json")["entries"]
+            verdict: Json = {"status": "skip", "exit": 0, "output": reason}
+            self.assertEqual({name: entry[name] for name in verdict}, verdict)
+            self.assertEqual(entry["invocations"][0]["seconds"], 0)
+        tests = self.records / BUILD / "blktests" / "nvme0n1" / "block"
+        self.assertEqual([test.name for test in tests.iterdir()], ["004.json"])
+
+    def test_the_qemu_of_the_machine_is_the_second_tool(self) -> None:
+        fakes = self.root / "bin"
+        fakes.mkdir()
+        # The QEMU is of no package, as one built from its tree.
+        scripts = {"qemu-system-x86_64": f"echo '{QEMU}'", "dpkg-query": "exit 1"}
+        for name, script in scripts.items():
+            (fakes / name).write_text(f"#!/bin/sh\n{script}\n")
+            (fakes / name).chmod(0o755)
+        release = self.root / "os-release"
+        release.write_text("ID=debian\n")
+        self.enterContext(mock.patch.object(record, "OS_RELEASE", release))
+        path = f"{fakes}{os.pathsep}{os.environ['PATH']}"
+        self.enterContext(mock.patch.dict(os.environ, {"PATH": path}))
+        self.result("loop/nodev/loop/001", PASSED)
+        self.file(f"--qemu={fakes / 'qemu-system-x86_64'}")
+        (entry,) = self.read("blktests/nodev/loop/001.json")["entries"]
+        qemu: Json = {"name": "qemu", "version": "11.0.93"}
+        qemu["build"] = "v11.1.0-rc2-19-gc62733676086"
+        blktests_: Json = {"name": "blktests", "version": "", "build": VERSION}
+        self.assertEqual(entry["tools"], [blktests_, qemu])
+        missing = self.root / "no-qemu"
+        said = self.file(f"--qemu={missing}")
+        self.assertEqual(said, f"no record: {missing} is no program\n")
 
     def test_a_test_on_a_device_asked_for_alone(self) -> None:
         self.result("block/003/nvme0n1/block/003", PASSED.replace("1.682s", "0.282s"))

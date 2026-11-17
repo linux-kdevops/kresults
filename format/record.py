@@ -428,7 +428,11 @@ def tool(name: str) -> Json:
     """Return a tool as an entry names it: its name, version and build."""
     path = shutil.which(name) or ""
     need(path, f"{name} is not on PATH")
-    printed = run(name, "--version").partition("\n")[0]
+    return tool_of(name, path, run(name, "--version").partition("\n")[0])
+
+
+def tool_of(name: str, path: str, printed: str) -> Json:
+    """Return a tool as an entry names it, from the line it prints of its version."""
     versions = VERSION.findall(printed)
     build = build_of(str(Path(path).resolve()), printed)
     return {"name": name, "version": versions[-1] if versions else "", "build": build}
