@@ -92,9 +92,9 @@ A run the format cannot file leaves no record: ``krecord`` says why in one
 line and exits 0. That is a run with no lab named, outside a Git work
 tree, whose ``--config`` file is missing, or that a signal ended.
 
-``kseries`` writes the ``series.json`` of commits that came from no
-message. Run it at the top of the tree with their range, ``BASE..TIP``, or
-``BASE..`` for the tree's ``HEAD``:
+``kseries`` writes the ``series.json`` of a range of commits. Run it at
+the top of the tree with their range, ``BASE..TIP``, or ``BASE..`` for the
+tree's ``HEAD``:
 
 .. code-block:: console
 
@@ -104,6 +104,22 @@ It names the base, the commits the base lacks and the files they change
 under the tip's directory, in place of the ``series.json`` ``krecord``
 left there. It takes ``--project`` and ``--records`` as ``krecord`` does,
 and exits 1 with the reason when the range names no such commits.
+
+For commits applied from a mailing list, ``--mbox`` names the thread
+they were posted as, an mbox that ``b4 mbox`` wrote:
+
+.. code-block:: console
+
+   $ kseries --range v7.3.. --mbox cover.mbx
+
+The series takes its Message-ID from the thread's first message, the one
+that answers no other, and its cover letter when that message is one. A
+file that does not exist names no message, so a producer may pass the
+option on every run. Neither does a thread left from another series,
+which ``kseries`` names on standard error: each commit's subject must be
+that of a patch of the thread, at the revision of its first message.
+``kseries`` exits 1 on a file it cannot read, or whose Message-ID holds a
+``/``.
 
 ``kobjects`` writes the ``objects.json`` of one build of a series. Run it
 at the top of the tree once the build is done and ``kseries`` has named

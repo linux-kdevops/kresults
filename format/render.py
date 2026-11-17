@@ -1426,14 +1426,15 @@ def load_came(records: Path, commit: Path) -> Came:
         return Came()
     try:
         series = parse_series(data := read_json(file))
-        cover = None if series.message_id else local_cover(data)
+        cover = local_cover(data)
     except RecordError as error:
         return Came(Unreadable(file.relative_to(records).as_posix(), str(error)))
     if not series.message_id:
         return Came(series, cover)
     mbox = inside(commit.parent, f"{series.message_id}/{MBOX}")
     shazam = inside(commit.parent, f"{series.message_id}/b4/shazam.json")
-    return Came(series, load_cover(records, mbox), load_log(records, shazam))
+    # The letter series.json holds has its text, which the mbox's headers lack.
+    return Came(series, cover or load_cover(records, mbox), load_log(records, shazam))
 
 
 def commit_files(commit: Path) -> list[Path]:
@@ -4322,9 +4323,9 @@ def cover_items(
     if isinstance(cover, Unreadable):
         return [("Cover letter", unreadable_html(cover)), *thread, *named]
     if cover.text is not None:
-        # A cover letter kept in a commit: no message, so no thread or lists.
+        # A cover letter series.json holds: one kept in a commit has no thread.
         change = [("Change-id", mono(cover.change_id))] if cover.change_id else []
-        return [("Date", escape(cover.date)), *change]
+        return [("Date", escape(cover.date)), *change, *thread, *named]
     return [
         ("Date", escape(cover.date) if cover.date else muted("not given")),
         ("Thread", thread_html(cover.message_id or message_id)),
@@ -4333,7 +4334,7 @@ def cover_items(
 
 
 def cover_section(cover: Cover | Unreadable | None) -> str:
-    """The text of a cover letter kept in a commit, open when an output shows whole."""
+    """The text of a cover letter series.json holds, open when an output shows whole."""
     if not isinstance(cover, Cover) or not (rows := lines(cover.text or "")):
         return ""
     opened = "" if len(rows) > CUT else " open"

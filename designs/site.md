@@ -83,10 +83,12 @@ About is Octicons', under MIT.
   read from disk.
 - An output on a page stops at 50 lines, with the whole one link away.
   Four hundred lines pushed the next record several screens down.
-- A series that came from no message shows the cover letter its
-  `series.json` holds: its date and change-id in the header, and its
-  text in one block above the patches, closed when it is longer than an
-  output may be. No thread holds the letter of a series not yet sent.
+- A series shows the cover letter its `series.json` holds: its date and
+  change-id in the header, and its text in one block above the patches,
+  closed when it is longer than an output may be. One with a Message-ID
+  links its thread as well; no thread holds the letter of a series not
+  yet sent. Without a letter there, the page shows the headers of the
+  mbox under the Message-ID.
 - A series' output and its base's open in place, by checkboxes that the
   stylesheet reads. Reading either used to mean leaving the diff.
 - The index lists each series once, newest first by the cover letter's

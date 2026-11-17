@@ -121,7 +121,7 @@
       }
     },
     "cover": {
-      "description": "The cover letter of a series that came from no message, as b4 prep keeps it in the first commit of its branch: a commit that changes no file, which commits leaves out",
+      "description": "The series' cover letter: the one b4 prep keeps in the first commit of its branch, a commit that changes no file and that commits leaves out, else the first message of a series applied from a mailing list, when its subject counts it as patch 0",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -138,25 +138,25 @@
           "minLength": 1
         },
         "author": {
-          "description": "Name <email>, the commit's author",
+          "description": "Name <email>, the commit's author or the message's From",
           "type": "string"
         },
         "date": {
-          "description": "The commit's author date, in UTC",
+          "description": "The commit's author date or the message's Date, in UTC",
           "type": "string",
           "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
         },
         "change_id": {
-          "description": "b4's change-id of the series; empty when its tracking block names none",
+          "description": "b4's change-id of the series, from its tracking block or the message's change-id: line; empty without one",
           "type": "string"
         },
         "revision": {
-          "description": "The revision b4 tracks, 1 when its tracking block names none",
+          "description": "The revision b4 tracks, or the vN of the message's subject; 1 without one",
           "type": "integer",
           "minimum": 1
         },
         "text": {
-          "description": "The message after its subject, up to b4's tracking block, without the lines that start with # and the blank lines at either end",
+          "description": "The commit's message after its subject, up to b4's tracking block, without the lines that start with #; or the message's body up to the --- line above its base-commit: or change-id: line, else up to its signature. Without the blank lines at either end",
           "type": "string"
         }
       }

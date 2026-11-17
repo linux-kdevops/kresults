@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -21,6 +22,15 @@ import validate
 type Json = dict[str, Any]
 
 URL = "https://git.example.org/linux.git"
+POSTED = "20260825-topic-v1-0-afc38ac713ef@example.org"
+# A cover letter as b4 sends one.
+TEXT = "A topic.\n\n    $ make\n\nSigned-off-by: A Developer <dev@example.org>"
+STAT = "A Developer (2):\n      init: add files\n\n init/main.c | 1 +"
+TRAILERS = "base-commit: 7a34f7b8794b\nchange-id: 20260824-topic-3af8616d6e37"
+BODY = f"{TEXT}\n---\n{STAT}\n---\n{TRAILERS}\n\nBest regards,\n-- \nA Developer\n"
+# The subjects of the range's commits, and the header of a reply.
+PATCHES = ("init: add files", "init: change a file")
+REPLY = "In-Reply-To"
 FILES = {
     "init/main.c": "int main;\n",
     "include/example.h": "",
@@ -51,6 +61,7 @@ class SeriesTest(unittest.TestCase):
         self.enterContext(mock.patch.dict(os.environ, environ, clear=True))
         self.tree.mkdir()
         self.records.mkdir()
+        self.sent = 0
         self.git("init", "--quiet")
         self.base = self.commit("init: example", {"old.c": "", "kept.c": ""})
         self.git("tag", "v1.2")
@@ -198,6 +209,228 @@ class SeriesTest(unittest.TestCase):
         written = self.read(f"v1.2-1-g{patch[:12]}")
         self.assertNotIn("cover", written)
         self.assertEqual(written["commits"][0]["commit"], patch)
+
+    def message(self, subject: str, body: str = BODY, **headers: str) -> EmailMessage:
+        """Return a message, which is the root of its thread."""
+        message = EmailMessage()
+        message["From"] = "Dév Eloper <dev@example.org>"
+        message["Subject"] = subject
+        message["Date"] = "Tue, 25 Aug 2026 22:08:00 +0200"
+        message["Message-ID"] = f"<{POSTED}>"
+        for name, value in headers.items():
+            del message[name]
+            message[name] = value
+        message.set_content(body)
+        return message
+
+    def reply(self, subject: str) -> EmailMessage:
+        """Return a message that answers the root: a patch, or a review."""
+        self.sent += 1
+        headers = {"Message-ID": f"<{self.sent}@example.org>"}
+        return self.message(subject, "A patch.\n", **headers, **{REPLY: f"<{POSTED}>"})
+
+    def box(self, *thread: EmailMessage | bytes) -> str:
+        """Write an mbox of a thread, and return the option that names it."""
+        start = b"From mboxrd@z Thu Jan  1 00:00:00 1970\n"
+        file = self.root / "cover.mbx"
+        file.write_bytes(b"".join(start + bytes(message) for message in thread))
+        return f"--mbox={file}"
+
+    def mail(
+        self,
+        subject: str,
+        body: str = BODY,
+        *,
+        patches: tuple[str, ...] = PATCHES,
+        **headers: str,
+    ) -> str:
+        """Write the mbox of a series: its root, then the patches a letter counts."""
+        root = self.message(subject, body, **headers)
+        letter = series.LETTER.search(subject)
+        prefixes = subject[: subject.find("]", letter.end()) + 1] if letter else ""
+        counted = enumerate(patches, 1)
+        replies = (f"{prefixes.replace('0/', f'{n}/')} {patch}" for n, patch in counted)
+        return self.box(root, *map(self.reply, replies))
+
+    def posted(self, *mail: str, **headers: str) -> Json:
+        """Return the series.json of the range, posted as a mail."""
+        self.write("--range=v1.2..", self.mail(*mail, **headers))
+        return self.read(f"v1.2-2-g{self.second[:12]}")
+
+    def test_a_cover_letter_of_an_mbox(self) -> None:
+        written = self.posted("[PATCH 0/2] A [topic]")
+        wanted = {
+            "subject": "A [topic]",
+            "author": "Dév Eloper <dev@example.org>",
+            "date": "2026-08-25T20:08:00Z",
+            "change_id": "20260824-topic-3af8616d6e37",
+            "revision": 1,
+            "text": f"{TEXT}\n---\n{STAT}",
+        }
+        self.assertEqual(written["message_id"], POSTED)
+        self.assertEqual(written["cover"], wanted)
+        self.assertEqual(len(written["commits"]), 2)
+
+    def test_an_mbox_that_is_not_there_is_no_message(self) -> None:
+        self.write("--range=v1.2..", f"--mbox={self.root / 'none.mbx'}")
+        written = self.read(f"v1.2-2-g{self.second[:12]}")
+        self.assertEqual(written["message_id"], "")
+        self.assertNotIn("cover", written)
+
+    def test_a_patch_of_an_mbox_is_no_cover_letter(self) -> None:
+        first, second = (
+            f"[PATCH v2 {n}/2] {patch}" for n, patch in enumerate(PATCHES, 1)
+        )
+        self.write("--range=v1.2..", self.box(self.message(first), self.reply(second)))
+        written = self.read(f"v1.2-2-g{self.second[:12]}")
+        self.assertEqual(written["message_id"], POSTED)
+        self.assertNotIn("cover", written)
+
+    def test_a_patch_alone_is_the_series(self) -> None:
+        self.git("switch", "--quiet", "--create", "one", "v1.2")
+        patch = self.commit("init: change a file", {"kept.c": "int;\n"})
+        for subject in ("[PATCH v3] init: change a file", "init: change a file"):
+            self.write("--range=v1.2..", self.mail(subject))
+            written = self.read(f"v1.2-1-g{patch[:12]}")
+            self.assertEqual(written["message_id"], POSTED)
+            self.assertNotIn("cover", written)
+        # A range may hold fewer commits than the series has patches.
+        self.write("--range=v1.2..", self.mail("[PATCH 0/2] A topic"))
+        written = self.read(f"v1.2-1-g{patch[:12]}")
+        self.assertEqual(written["message_id"], POSTED)
+        self.assertEqual(written["cover"]["subject"], "A topic")
+
+    def test_a_reply_is_no_patch(self) -> None:
+        root = self.message("[PATCH 0/2] A topic")
+        first = self.reply("[PATCH 1/2] init: add files")
+        review = self.reply("Re: [PATCH 1/2] init: add files")
+        thanks = self.reply("Re: [PATCH 0/2] A topic")
+        second = self.reply("[PATCH 2/2] init: change a file")
+        self.write("--range=v1.2..", self.box(root, first, review, thanks, second))
+        written = self.read(f"v1.2-2-g{self.second[:12]}")
+        self.assertEqual(written["message_id"], POSTED)
+        self.assertEqual(written["cover"]["subject"], "A topic")
+        # A review of the second patch, whose own mail the thread lacks.
+        review = self.reply("Re: [PATCH 2/2] init: change a file")
+        said = self.write("--range=v1.2..", self.box(root, first, review))
+        self.assertIn("is of another series", said)
+        self.assertEqual(self.read(f"v1.2-2-g{self.second[:12]}")["message_id"], "")
+
+    def test_an_mbox_of_another_series_is_not_used(self) -> None:
+        name = f"v1.2-2-g{self.second[:12]}"
+        file = self.records / "linux" / name / "series.json"
+        stale = f"no mbox: {self.root / 'cover.mbx'} is of another series, <{POSTED}>\n"
+        mails = (
+            self.mail("[PATCH 0/2] A topic", patches=("init: other", PATCHES[1])),
+            self.mail("[PATCH 0/2] A topic", patches=()),
+            self.mail("[PATCH] init: add files"),
+        )
+        for mail in mails:
+            said = self.write("--range=v1.2..", mail)
+            self.assertEqual(said, f"{stale}series: {file}\n")
+            written = self.read(name)
+            self.assertEqual(written["message_id"], "")
+            self.assertNotIn("cover", written)
+
+    def test_a_patch_of_another_revision_is_no_patch(self) -> None:
+        root = self.message("[PATCH v2 0/2] A topic")
+        old = [
+            self.reply(f"[PATCH {n}/2] {patch}") for n, patch in enumerate(PATCHES, 1)
+        ]
+        new = [
+            self.reply(f"[PATCH v2 {n}/2] {patch}")
+            for n, patch in enumerate(PATCHES, 1)
+        ]
+        renamed = self.reply("[PATCH v2 2/2] init: rename a file")
+        said = self.write("--range=v1.2..", self.box(root, *old, new[0], renamed))
+        self.assertIn("is of another series", said)
+        self.assertEqual(self.read(f"v1.2-2-g{self.second[:12]}")["message_id"], "")
+        renamed = self.reply("[PATCH 2/2] init: rename a file")
+        self.write("--range=v1.2..", self.box(root, old[0], renamed, *new))
+        written = self.read(f"v1.2-2-g{self.second[:12]}")
+        self.assertEqual(written["message_id"], POSTED)
+        self.assertEqual(written["cover"]["revision"], 2)
+
+    def test_a_folded_subject_is_one_line(self) -> None:
+        root = self.message("[PATCH 0/2] A topic")
+        first = self.reply("[PATCH 1/2] init: add files")
+        second = bytes(self.reply("[PATCH 2/2] init: change a file"))
+        folded = second.replace(b"init: change a", b"init:\n\t change   a")
+        self.assertNotEqual(folded, second)
+        self.write("--range=v1.2..", self.box(root, first, folded))
+        written = self.read(f"v1.2-2-g{self.second[:12]}")
+        self.assertEqual(written["message_id"], POSTED)
+
+    def test_the_root_of_a_thread_need_not_come_first(self) -> None:
+        root = self.message("[PATCH 0/2] A topic")
+        patches = [
+            self.reply(f"[PATCH {n}/2] {patch}") for n, patch in enumerate(PATCHES, 1)
+        ]
+        self.write("--range=v1.2..", self.box(*patches, root))
+        written = self.read(f"v1.2-2-g{self.second[:12]}")
+        self.assertEqual(written["message_id"], POSTED)
+        self.assertEqual(written["cover"]["subject"], "A topic")
+        # A thread saved without its root starts at its first message.
+        self.write("--range=v1.2..", self.box(*patches))
+        self.assertEqual(
+            self.read(f"v1.2-2-g{self.second[:12]}")["message_id"], "1@example.org"
+        )
+
+    def test_a_prefix_names_the_revision(self) -> None:
+        for prefix, revision in (("PATCH v3 0/2", 3), ("PATCH RFC v12 00/15", 12)):
+            cover = self.posted(f"[{prefix}] A topic")["cover"]
+            self.assertEqual(
+                (cover["subject"], cover["revision"]), ("A topic", revision)
+            )
+        cover = self.posted("[RFC] [PATCH 0/2] A topic v2")["cover"]
+        self.assertEqual((cover["subject"], cover["revision"]), ("A topic v2", 1))
+
+    def test_a_date_is_set_in_utc(self) -> None:
+        dates = {
+            "Mon, 31 Aug 2026 23:30:00 -0700": "2026-09-01T06:30:00Z",
+            "Tue, 01 Sep 2026 00:15:00 +0530": "2026-08-31T18:45:00Z",
+            "Tue, 01 Sep 2026 06:30:00 -0000": "2026-09-01T06:30:00Z",
+        }
+        for sent, wanted in dates.items():
+            cover = self.posted("[PATCH 0/2] A topic", Date=sent)["cover"]
+            self.assertEqual(cover["date"], wanted)
+
+    def test_a_body_without_trailers_ends_at_its_signature(self) -> None:
+        body = f"\nA topic.\n---\nv2: more\n\n{STAT}\n\n-- \n2.51.0\n"
+        cover = self.posted("[PATCH 0/2] A topic", body)["cover"]
+        self.assertEqual(cover["text"], f"A topic.\n---\nv2: more\n\n{STAT}")
+        self.assertEqual(cover["change_id"], "")
+        cover = self.posted("[PATCH 0/2] A topic", "A topic.\n\n--\nmore\n")["cover"]
+        self.assertEqual(cover["text"], "A topic.\n\n--\nmore")
+
+    def test_a_cover_letter_of_b4_comes_before_an_mbox(self) -> None:
+        self.git("switch", "--quiet", "--create", "b4/topic", "v1.2")
+        self.empty(f"The tree's own\n\nText.\n\n{series.TRACKING}\n{{}}\n")
+        patch = self.commit("init: change a file", {"kept.c": "int;\n"})
+        self.write(
+            "--range=v1.2..", self.mail("[PATCH 0/1] A topic", patches=PATCHES[1:])
+        )
+        written = self.read(f"v1.2-2-g{patch[:12]}")
+        self.assertEqual(written["message_id"], POSTED)
+        self.assertEqual(written["cover"]["subject"], "The tree's own")
+
+    def test_an_mbox_that_names_no_series_is_refused(self) -> None:
+        refused = {"Message-ID": "<a/b@example.org>"}
+        named = self.mail("[PATCH 0/2] A topic", patches=PATCHES, **refused)
+        said = self.write("--range=v1.2..", named, status=1)
+        self.assertEqual(said, "no series: <a/b@example.org> is no Message-ID\n")
+        for date in ("", "soon"):
+            named = self.mail("[PATCH 0/2] A topic", Date=date)
+            said = self.write("--range=v1.2..", named, status=1)
+            self.assertEqual(said, "no series: its cover letter has no date\n")
+        (self.root / "cover.mbx").write_bytes(b"")
+        said = self.write("--range=v1.2..", named, status=1)
+        self.assertEqual(
+            said, f"no series: {self.root / 'cover.mbx'} holds no message\n"
+        )
+        said = self.write("--range=v1.2..", f"--mbox={self.root}", status=1)
+        self.assertIn(f"no series: {self.root} cannot be read: ", said)
+        self.assertEqual(list(self.records.iterdir()), [])
 
     def test_a_range_that_starts_with_an_option_is_refused(self) -> None:
         for given in ("--all..", "v1.2..--all", "--output=/dev/null..HEAD"):

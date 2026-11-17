@@ -4,28 +4,46 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""Write the series.json of commits that came from no message (README.md).
+"""Write the series.json of a range of commits (README.md).
 
 Run at the top of the Git work tree that holds them:
 
-    kseries --range BASE..TIP
+    kseries --range BASE..TIP [--mbox FILE]
 
-BASE.. ends at the tree's HEAD. Print the file written and exit 0, or why
-there is none and exit 1.
+BASE.. ends at the tree's HEAD. FILE is the mbox of the thread the
+commits were posted as; one that is not there, or whose patches are not
+the commits, names none. Print the file written and exit 0, or why there
+is none and exit 1.
 """
 
 import argparse
+import contextlib
 import json
+import mailbox
 import os
+import re
 import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from email import policy
+from email.errors import MessageError
+from email.message import EmailMessage
+from email.parser import BytesParser
 from pathlib import Path
 
-from record import Json, NoRecordError, need, placed, run, state, whole, write
+from record import MESSAGE, Json, NoRecordError, need, placed, run, state, whole, write
 
 # The line b4 prep starts its tracking block with, in a cover letter's commit.
 TRACKING = "--- b4-submit-tracking ---"
+# A subject's prefixes, each in its brackets, and what one says of the series.
+PREFIXES = re.compile(r"(?:\s*\[[^\]]*\])*")
+LETTER = re.compile(r"(?<![\w/])0+/\d+")
+COUNTER = re.compile(r"(?<![\w/])(\d+)/\d+")
+REVISION = re.compile(r"\bv(\d+)\b")
+# Where a letter's text ends: the --- line above b4's trailers, or the signature.
+END = re.compile(r"^---\n(?:base-commit|change-id):|^-- +$", re.MULTILINE)
+CHANGE_ID = re.compile(r"^change-id: *(\S+)[ \t]*$", re.MULTILINE)
+DATE = "%Y-%m-%dT%H:%M:%SZ"
 
 
 def named(commit: str, project: str) -> str:
@@ -90,10 +108,99 @@ def cover_of(commit: str) -> Json | None:
     revision = tracked.get("revision")
     when = datetime.fromtimestamp(int(at), UTC)
     cover: Json = {"subject": rows[0], "author": author}
-    cover |= {"date": when.strftime("%Y-%m-%dT%H:%M:%SZ")}
+    cover |= {"date": when.strftime(DATE)}
     cover |= {"change_id": str(tracked.get("change-id") or "")}
     cover |= {"revision": revision if type(revision) is int and revision > 0 else 1}
     return cover | {"text": text.strip("\n")}
+
+
+def letter_of(message: EmailMessage) -> Json | None:
+    """Return the cover letter a message is, or None of a patch.
+
+    A prefix of a cover letter's subject counts it as patch 0.
+    """
+    given = str(message["Subject"] or "")
+    prefixes = PREFIXES.match(given)
+    subject = given[prefixes.end() :].strip() if prefixes else ""
+    if not (prefixes and subject and LETTER.search(prefixes[0])):
+        return None
+    sender, sent = message["From"], message["Date"]
+    need(sender and sender.addresses, "its cover letter names no author")
+    need(sent and sent.datetime, "its cover letter has no date")
+    # A date without a zone is in UTC.
+    when = sent.datetime
+    when = (when if when.tzinfo else when.replace(tzinfo=UTC)).astimezone(UTC)
+    part = message.get_body(("plain",))
+    body = "\n".join(part.get_content().splitlines()) if part else ""
+    change = CHANGE_ID.search(body)
+    end = END.search(body)
+    name, address = sender.addresses[0].display_name, sender.addresses[0].addr_spec
+    cover: Json = {"subject": subject, "author": f"{name} <{address}>".strip()}
+    cover |= {"date": when.strftime(DATE), "change_id": change[1] if change else ""}
+    cover |= {"revision": revision_of(prefixes[0])}
+    return cover | {"text": body[: end.start() if end else None].strip("\n")}
+
+
+def revision_of(prefixes: str) -> int:
+    """Return the revision a subject's prefixes name, which is 1 when none does."""
+    revision = REVISION.search(prefixes)
+    return max(int(revision[1]), 1) if revision else 1
+
+
+def parts_of(subject: object) -> tuple[str, str]:
+    """Return a subject's prefixes and what follows them, its blanks single."""
+    given = " ".join(str(subject or "").split())
+    prefixes = PREFIXES.match(given)
+    end = prefixes.end() if prefixes else 0
+    return given[:end], given[end:].strip()
+
+
+def patches_of(root: EmailMessage, thread: Sequence[EmailMessage]) -> set[str]:
+    """Return the subjects of the patches a thread's root posted, without prefixes.
+
+    A root that counts no patch is the only one. A reply's subject starts
+    with no prefix, and a patch of another revision is of another series.
+    """
+    prefixes, subject = parts_of(root["Subject"])
+    if not COUNTER.search(prefixes):
+        return {subject}
+    patches: set[str] = set()
+    for message in thread:
+        own, subject = parts_of(message["Subject"])
+        counted = COUNTER.search(own)
+        if counted and int(counted[1]) and revision_of(own) == revision_of(prefixes):
+            patches.add(subject)
+    return patches
+
+
+def posted_as(file: Path | None, commits: Sequence[Json]) -> tuple[str, Json | None]:
+    """Return the Message-ID of the root of an mbox's thread, and its cover letter.
+
+    A file that is not there holds no message, and a thread whose patches
+    are not the commits is of another series: a work tree keeps its mbox.
+    """
+    if file is None or not file.exists():
+        return "", None
+    try:
+        with contextlib.closing(mailbox.mbox(file, create=False)) as box:
+            parser = BytesParser(policy=policy.default)
+            thread = [parser.parsebytes(box.get_bytes(key)) for key in box.iterkeys()]
+        need(thread, f"{file} holds no message")
+        # The first message is the root of a thread whose root was not saved.
+        root = next((one for one in thread if not one["In-Reply-To"]), thread[0])
+        name = str(root["Message-ID"] or "").strip()
+        patches = patches_of(root, thread)
+        subjects = (" ".join(commit["subject"].split()) for commit in commits)
+        if not all(subject in patches for subject in subjects):
+            sys.stderr.write(f"no mbox: {file} is of another series, {name}\n")
+            return "", None
+        cover = letter_of(root)
+    except (OSError, mailbox.Error, MessageError, LookupError, ValueError) as error:
+        why = f"{file} cannot be read: {error}"
+        raise NoRecordError(why) from error
+    message_id = name.removeprefix("<").removesuffix(">")
+    need(MESSAGE.fullmatch(message_id), f"{name or file} is no Message-ID")
+    return message_id, cover
 
 
 def books_of(files: Sequence[str], tip: str) -> list[str]:
@@ -105,7 +212,7 @@ def books_of(files: Sequence[str], tip: str) -> list[str]:
     return sorted(index.split("/")[1] for index in found.splitlines())
 
 
-def series_of(range_: str, project: str) -> tuple[str, Json]:
+def series_of(range_: str, project: str, mbox: Path | None = None) -> tuple[str, Json]:
     """Return the name of a range's tip and its series, or raise why it has none."""
     given, dots, last = range_.partition("..")
     need(dots and given, f"{range_} is no BASE..TIP")
@@ -119,12 +226,15 @@ def series_of(range_: str, project: str) -> tuple[str, Json]:
     if cover := cover_of(commits[0]["commit"]) if commits else None:
         del commits[0]
     need(commits, f"{range_} holds no commit")
+    # The letter the tree holds is its own, and one posted is of its time.
+    message_id, posted = posted_as(mbox, commits)
+    cover = cover or posted
     ref = last
     if last in ("", "HEAD"):
         # The branch HEAD is on, which is none when it is detached.
         ref = run("git", "symbolic-ref", "--quiet", "--short", "HEAD")
     files = changed(base, tip, "--diff-filter=d")
-    series: Json = {"schema": 1, "commit": tip, "message_id": "", "ref": ref}
+    series: Json = {"schema": 1, "commit": tip, "message_id": message_id, "ref": ref}
     series |= {"trees": trees_of(tip), "base": base}
     series |= {"base_name": named(base, project), "base_trees": trees_of(base)}
     series |= {"commits": commits} | ({"cover": cover} if cover else {})
@@ -138,11 +248,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     summary = (__doc__ or "").partition("\n")[0]
     parser = argparse.ArgumentParser(description=summary, allow_abbrev=False)
     parser.add_argument("--range", required=True, metavar="BASE..TIP")
+    parser.add_argument("--mbox", type=Path, metavar="FILE")
     parser.add_argument("--project", default="linux", metavar="NAME")
     parser.add_argument("--records", type=Path, default=state(), metavar="DIR")
     args = parser.parse_args(argv)
     try:
-        name, series = series_of(args.range, args.project)
+        name, series = series_of(args.range, args.project, args.mbox)
     except NoRecordError as why:
         sys.stderr.write(f"no series: {why}\n")
         return 1

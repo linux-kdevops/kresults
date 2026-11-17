@@ -249,8 +249,8 @@ linux/                                   the project
 │       └── fstests/xfs_bs4k_ss512/generic/001.json
 └── <message-id>/                        a series
     └── b4/
-        ├── mbox.json                    b4 mbox --single-message
-        ├── mbox.mbx                     the message it saved
+        ├── mbox.json                    b4 mbox
+        ├── mbox.mbx                     the thread it saved
         └── shazam.json                  b4 shazam
 qemu/                                    another project
 └── v11.1.0-12-g0123456789ab/            a commit
@@ -356,7 +356,9 @@ no message has one as well, with an empty `message_id`:
 - `commit`: the commit, whole;
 - `message_id`: the series it was applied from, whose records lie under
   `<project>/<message-id>/`; empty for a commit that came from no
-  message;
+  message. The commits came from a thread when the subject of each is
+  that of one of its patches, at the revision of the message that
+  starts it; a thread left from another series names none;
 - `lists`: the series' mailing lists, the addresses of its cover
   letter's To and Cc, or of its first patch's without one, that the
   base's `MAINTAINERS` names on an `L:` line, lowercased and sorted;
@@ -371,12 +373,17 @@ no message has one as well, with an empty `message_id`:
 - `commits`: the commits the base lacks, oldest first, each with its
   subject, author and last `Link:` trailer. A `series.json` that lists
   none is a base's;
-- `cover`, only of a series that came from no message and has a cover
-  letter: the letter as `b4 prep` keeps it, in a first commit that
-  changes no file and that `commits` leaves out. It holds the commit's
-  `subject`, `author` and author `date`, the `change_id` and `revision`
-  of b4's tracking block, and the `text`: the message between the
-  subject and the tracking block, without the lines that start with `#`;
+- `cover`, only of a series with a cover letter: the letter as
+  `b4 prep` keeps it, in a first commit that changes no file and that
+  `commits` leaves out. It holds the commit's `subject`, `author` and
+  author `date`, the `change_id` and `revision` of b4's tracking block,
+  and the `text`: the message between the subject and the tracking
+  block, without the lines that start with `#`. A series applied from a
+  mailing list with no such commit takes it from the message it was
+  posted as, when its subject counts it as patch 0, `[PATCH v2 0/5]`:
+  the subject without its prefixes, the `From` and the `Date`, the
+  `revision` of the prefix, and the body up to the `---` line above
+  b4's `base-commit:` and `change-id:` lines, or up to the signature;
 - `sources`, `docs` and `added`: the C files and headers the commits
   change, the directories of Documentation with an `index.rst` they
   change, and the files they add.
@@ -388,9 +395,10 @@ build, as a record does. No tool prints these lists: the producer reads
 them from the `.cmd` file kbuild writes for each object.
 
 A series' own records lie under its Message-ID: `b4/mbox.json` for
-fetching the message posted, `b4/mbox.mbx` for the message saved, and
+fetching the thread posted, `b4/mbox.mbx` for the thread saved, and
 `b4/shazam.json` for applying the series, its output what b4 printed.
-A reader takes the series' subject, author and date from `mbox.mbx`. A
+A reader takes the series' subject, author and date from the message
+that starts the thread in `mbox.mbx`, the one that answers no other. A
 series that does not apply has these records alone.
 
 ## Versions

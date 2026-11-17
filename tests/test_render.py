@@ -1741,7 +1741,7 @@ class SeriesPage(unittest.TestCase):
         for build in (B1, B2):
             put(series.joinpath(build, *MAKE_ALL), record(producer=producer))
             put(series / build / "sparse" / "x.json", record("fail", "w\nnew\n"))
-        message_id = THREAD if cover else ""
+        message_id = fields.pop("message_id", THREAD if cover else "")
         if "cover_kept" in fields:
             fields["cover"] = fields.pop("cover_kept")
         put(series / "series.json", series_json(patch, message_id=message_id, **fields))
@@ -2143,6 +2143,29 @@ class SeriesPage(unittest.TestCase):
         self.assertNotIn('id="cover"', build)
         self.assertIn(">Support &lt;MAM&gt; &amp; more</a>", self.page())
         self.assertNotIn("no cover letter", self.page())
+
+    def test_kept_of_a_series_that_was_posted(self) -> None:
+        kept = {
+            "subject": "Posted",
+            "author": "D <d@x>",
+            "date": "2026-09-29T10:19:18Z",
+        }
+        kept |= {"change_id": "", "revision": 2, "text": "Text."}
+        # Without the mbox under the Message-ID, and with it.
+        for cover in (False, True):
+            fields = {"cover_kept": kept, "message_id": THREAD, "lists": LISTS[:1]}
+            self.make(cover=cover, link=None, revision=None, **fields)
+            html = self.page("linux", "v1-1-gabc")
+            self.assertIn("<h1>Posted</h1>", html)
+            self.assertIn("<dt>Author</dt><dd>D &lt;d@x&gt;</dd>", html)
+            self.assertIn(f'<dt>Thread</dt><dd><a href="{render.LORE}{THREAD}/"', html)
+            self.assertIn("<dt>Mailing lists</dt>", html)
+            self.assertIn("<summary>1 line</summary><pre>Text.</pre>", html)
+            self.assertIn(">Posted</a>", self.page())
+            report = self.output.joinpath("linux", "v1-1-gabc", render.REPORT)
+            self.assertIn(f"In-Reply-To: <{THREAD}>", report.read_text("utf-8"))
+            shutil.rmtree(self.records)
+            shutil.rmtree(self.output)
 
     def test_kept_in_a_commit_and_long(self) -> None:
         kept = {"subject": "s", "author": "D <d@x>", "date": "2026-09-29T10:19:18Z"}
