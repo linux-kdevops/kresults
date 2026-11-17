@@ -463,10 +463,15 @@ def resources() -> Json:
     return {"resources": used} if used else {}
 
 
+def memory_of(meminfo: Path) -> int:
+    """Return a machine's memory in bytes, as its /proc/meminfo counts it."""
+    total = find(r"^MemTotal:\s*(\d+) kB$", meminfo.read_text("utf-8"))
+    return int(total or 0) * 1024
+
+
 def invocation(args: argparse.Namespace, lab: str, started: int) -> Json:
     """Return who ran the command, when and where, and what it used."""
     at = datetime.fromtimestamp(started, UTC)
-    memory = find(r"^MemTotal:\s*(\d+) kB$", MEMINFO.read_text("utf-8"))
     return {
         "producer": {"name": args.producer, "version": args.producer_version},
         "origin": lab,
@@ -478,7 +483,7 @@ def invocation(args: argparse.Namespace, lab: str, started: int) -> Json:
             "arch": os.uname().machine,
             "cpu": find(r"^Model name:\s*(.+)$", run("lscpu")),
             "cpus": len(os.sched_getaffinity(0)),
-            "memory": int(memory or 0) * 1024,
+            "memory": memory_of(MEMINFO),
         },
     }
 
@@ -518,6 +523,19 @@ def merged(path: Path, subject: Json, entry: Json) -> Json:
     else:
         entries.append(entry)
     return record
+
+
+def write_base(directory: Path, commit: str, name: str) -> None:
+    """Write the series.json of a commit's directory that holds none.
+
+    A commit that came from no message is its own base.
+    """
+    if (directory / "series.json").exists():
+        return
+    series = {"schema": 1, "commit": commit, "message_id": "", "ref": ""}
+    series |= {"trees": [], "base": commit, "base_name": name, "base_trees": []}
+    series |= {"commits": [], "sources": [], "docs": [], "added": [], "lists": []}
+    write(directory / "series.json", series)
 
 
 def built(config: Path, settings: bytes, configuration: str) -> Json:
@@ -589,15 +607,10 @@ def file_run(args: argparse.Namespace) -> None:
     write(filed, merged(filed, subject, entry))
     if config:
         write(build / "config", settings)
-    if "message_id" not in subject and not (directory / "series.json").exists():
-        # A commit that came from no message is its own base. The series
-        # names the commit the record lies under, the range's tip where
-        # one was checked, not the tree's HEAD.
-        at = subject["commit"]
-        series = {"schema": 1, "commit": at, "message_id": "", "ref": ""}
-        series |= {"trees": [], "base": at, "base_name": name, "base_trees": []}
-        series |= {"commits": [], "sources": [], "docs": [], "added": [], "lists": []}
-        write(directory / "series.json", series)
+    if "message_id" not in subject:
+        # The series names the commit the record lies under, the range's
+        # tip where one was checked, not the tree's HEAD.
+        write_base(directory, subject["commit"], name)
     # A path unit on the tree's top sees no write below it: mark the change.
     os.utime(args.records)
 

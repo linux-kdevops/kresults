@@ -128,7 +128,9 @@ commit and build, repeats the run.
 - the variables [commands.json] lists under the project's `env` for the
   command's tool, as `ARCH` and `LLVM` for make in a kernel tree;
 - fstests: each variable of the section that `check -s` runs, as its
-  configuration file sets it.
+  configuration file sets it;
+- blktests: `TEST_DEVS`, the device the test ran on, `/dev/nvme0n1`,
+  and none for a test that makes its own device.
 
 `config` is `sha256:` and the SHA-256 of the `.config` the command ran
 under, absent when it reads none. A profile's fragments can change
@@ -155,8 +157,9 @@ the command that runs next.
 else 0. A `pass` has an exit status of 0. A `fail` may have one too, for
 a tool that exits 0 whatever it finds, where the producer reads the
 verdict from what the tool printed. A `skip` always has its reason as
-`output`. A run stopped on purpose, as when its producer cancels it,
-leaves nothing.
+`output`. blktests writes no reason to a test's result, so a test that
+it did not run leaves no record until the reason is kept. A run stopped
+on purpose, as when its producer cancels it, leaves nothing.
 
 ## Output
 
@@ -244,7 +247,8 @@ linux/                                   the project
 │   │   ├── clang-tidy/init/main.o.json
 │   │   └── sparse/init/main.o.json      make C=2 init/main.o
 │   ├── block-layer/nvm-express-driver/x86_64/clang/
-│   │   └── make/all.json
+│   │   ├── make/all.json
+│   │   └── blktests/nvme0n1/block/003.json
 │   └── fstests/xfs-filesystem/x86_64/clang/
 │       └── fstests/xfs_bs4k_ss512/generic/001.json
 └── <message-id>/                        a series
@@ -316,8 +320,11 @@ qemu/                                    another project
     `checkpatch.pl.json`, `kernel-doc/init/main.c.json`; a program run
     with a subcommand by the program, then the subcommand,
     `b4/shazam.json`;
-  - a test suite by its name, then the section that ran the test:
-    `fstests/xfs_bs4k_ss512/generic/001.json`.
+  - a test suite by its name, then what ran the test, the section of
+    fstests and the device of blktests:
+    `fstests/xfs_bs4k_ss512/generic/001.json`,
+    `blktests/nvme0n1/block/003.json`, and
+    `blktests/nodev/loop/001.json` for a test that makes its own device.
 
   The same tool run with other flags is another entry of the same
   record, as `checkpatch.pl` is with and without `--strict`.

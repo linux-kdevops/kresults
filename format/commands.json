@@ -119,6 +119,11 @@
           "under": "build"
         },
         {
+          "command": "check TEST",
+          "record": "blktests/*/**.json",
+          "under": "build"
+        },
+        {
           "command": "scripts/checkpatch.pl --git RANGE",
           "record": "checkpatch.pl.json",
           "under": "commit"

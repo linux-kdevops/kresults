@@ -4,7 +4,7 @@
 Deployment
 ==========
 
-The five programs are scripts under :src:`format`, each run from a clone
+The six programs are scripts under :src:`format`, each run from a clone
 or under its name on ``PATH``. They need `Python`_ 3.13 or later and `Git`_,
 and ``validate`` also needs `jsonschema`_ (``python3-jsonschema``).
 
@@ -16,8 +16,9 @@ and ``validate`` also needs `jsonschema`_ (``python3-jsonschema``).
    $ ln --symbolic --verbose "$PWD/format/render.py" ~/.local/bin/krender
    $ ln --symbolic --verbose "$PWD/format/series.py" ~/.local/bin/kseries
    $ ln --symbolic --verbose "$PWD/format/objects.py" ~/.local/bin/kobjects
+   $ ln --symbolic --verbose "$PWD/format/blktests.py" ~/.local/bin/kblktests
 
-With `Nix`_, the flake installs all five and the units:
+With `Nix`_, the flake installs all six and the units:
 
 .. code-block:: console
 
@@ -136,6 +137,18 @@ C files it does not compile, beside the build's ``config``. It takes
 does, and exits 1 with the reason when the commit has no series or the
 build is not finished.
 
+``kblktests`` files the results of a `blktests`_ run, one record for
+each test. Run it at the top of the tree of the kernel that ran, with
+the directory the run wrote and the build as ``krecord`` takes it:
+
+.. code-block:: console
+
+   $ kblktests --results results --config build/.config \
+       --configuration defconfig --producer NAME --producer-version 1
+
+The directory holds ``machine/``, the facts of the machine under test.
+A result filed already is left as it is.
+
 Checking records
 ================
 
@@ -217,6 +230,7 @@ Another records tree takes a drop-in on each of the two render units, for
 :cmd:`journalctl` ``--user-unit kresults-render`` has each render, and why
 one failed.
 
+.. _blktests: https://github.com/linux-blktests/blktests
 .. _Git: https://git-scm.com
 .. _inotify: https://man7.org/linux/man-pages/man7/inotify.7.html
 .. _jsonschema: https://python-jsonschema.readthedocs.io/
