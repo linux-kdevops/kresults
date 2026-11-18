@@ -1653,7 +1653,10 @@ class Links(unittest.TestCase):
         tools = [{**blktests, "url": "https://e.org/c?a=1&b=2"}, CLANG]
         self.assertEqual(
             render.command_html(render.parse_record(record(tools=tools))),
-            '<p class="step muted mono">$ ARCH=x86_64 LLVM=1 make -s</p>'
+            '<p class="step muted mono">$ ARCH=x86_64 LLVM=1 make -s</p>',
+        )
+        self.assertEqual(
+            render.tools_html(render.parse_record(record(tools=tools))),
             '<p class="note text-muted-sm">With blktests (<a href='
             '"https://e.org/c?a=1&amp;b=2">79c32fb31b7b</a>),'
             " clang 21.1.8 (/nix/store/x-clang-21.1.8)</p>",
@@ -1662,9 +1665,27 @@ class Links(unittest.TestCase):
         for url in ("javascript:alert(1)", "data:text/html,x", " https://e.org"):
             with self.subTest(url=url):
                 tools = [{**unsafe, "url": url}]
-                shown = render.command_html(render.parse_record(record(tools=tools)))
+                shown = render.tools_html(render.parse_record(record(tools=tools)))
                 self.assertIn("With &lt;x&gt; &lt;v&gt; (&lt;b&gt;)</p>", shown)
                 self.assertNotIn("href", shown)
+
+    def test_tools_once_a_section(self) -> None:
+        linked = render.parse_record(
+            record(tools=[{**CLANG, "url": "https://e.org/clang"}])
+        )
+        records: dict[str, render.Entry] = {
+            "make/all": parsed(),
+            "make/modules": parsed(),
+            "sparse/x": parsed(),
+            "sparse/y": linked,
+        }
+        page = render.tree_page(render.Page(tree(records), None, None, {}), "")
+        line = f'<p class="note text-muted-sm">{WITH}</p>'
+        self.assertEqual(page.count("With clang"), 3)
+        self.assertEqual(page.count(f"<h2>make</h2>{line}<div><details"), 1)
+        self.assertEqual(page.count(f"</p>{line}"), 1)
+        self.assertEqual(page.count("</p>" + render.tools_html(linked)), 1)
+        self.assertIn("<h2>sparse</h2><div><details", page)
 
 
 def linux(commit: str) -> render.Tree:
@@ -2377,7 +2398,9 @@ class Layout(unittest.TestCase):
             ("v1", ["make", "kunit"]),
         ):
             page = output.joinpath("linux", name, B, "index.html").read_text()
-            self.assertEqual(re.findall(r"<h2>([^<]+)</h2><div>", page), order)
+            self.assertEqual(
+                re.findall(r"<h2>([^<]+)</h2>(?:<p[^>]*>[^<]*</p>)?<div>", page), order
+            )
 
     def test_history(self) -> None:
         for path, key in (
@@ -4088,8 +4111,11 @@ class Format(unittest.TestCase):
     def test_resources_on_a_page(self) -> None:
         build = self.page("linux", self.DIRTY, self.HOST, "index.html")
         self.assertIn(
-            '<p class="step muted mono">$ make</p><p class="note text-muted-sm">With'
-            ' tool 1.0 (v1.0)</p><p class="note text-muted-sm">Run'
+            '<h2>make</h2><p class="note text-muted-sm">With tool 1.0 (v1.0)</p>',
+            build,
+        )
+        self.assertIn(
+            '<p class="step muted mono">$ make</p><p class="note text-muted-sm">Run'
             ' <span class="mono">run-1</span> at <span class="mono">lab-a</span>,'
             " started 2026-01-02T03:04:05Z, 3 s on Example, 4 CPUs, 8 GiB"
             f"<br>{TOOK}</p>",

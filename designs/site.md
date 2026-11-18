@@ -89,13 +89,19 @@ About is Octicons', under MIT.
   links its thread as well; no thread holds the letter of a series not
   yet sent. Without a letter there, the page shows the headers of the
   mbox under the Message-ID.
-- An entry names its tools on one line under its command, on a page and
-  in the report: each by name, the version it prints, and its build in
-  parentheses, a link on a page where the tool has a `url`. A series'
-  entry alone has the line, as it alone has the command. Without it
-  "ran differently" points at tools no page names. A `url` is no part
-  of what an entry ran, so an entry with one still matches a base's
-  without.
+- An entry names its tools on one line: each by name, the version it
+  prints, and its build in parentheses, a link on a page where the tool
+  has a `url`. A series' entry alone has the line, as it alone has the
+  command. Without it "ran differently" points at tools no page names. A
+  `url` is no part of what an entry ran, so an entry with one still
+  matches a base's without.
+- A section of a build's page whose records all show the same line of
+  tools has it once, under its heading, and none under an entry; a
+  section of one record does too. Where two records differ, in a `url`
+  as well, each keeps the line under its command and the heading has
+  none. A section of blktests has a hundred entries, and the same line
+  under each says nothing after the first. The report and the page of a series that does not apply name the tools
+  under each command: a section there is one entry.
 - A build's page has a section per tool, in the order the tools first
   ran: each is placed by the earliest start of any invocation of its
   records there, the series' where it has any and else the base's. Two

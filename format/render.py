@@ -4294,7 +4294,8 @@ def unapplied_page(item: Unapplied, marks: Marks, site: Site) -> str:
         items.append(("Producer", producer_html(record.producer)))
     if isinstance(record, Record):
         whole = url("", *output_file(item.key))
-        shown = command_html(record) + invocation_html(record)
+        shown = command_html(record) + tools_html(record)
+        shown += invocation_html(record)
         shown += output_html(record, whole)
     else:
         shown = f'<p class="note">{mono(f"{record.path}: {record.reason}")}</p>'
@@ -4754,13 +4755,21 @@ def tool_html(tool: Tool) -> str:
     return f"{escape(tool.named)} ({build})"
 
 
-def command_html(record: Record) -> str:
-    """A record's command as a developer types it, and under it its tools."""
+def tools_html(record: Record) -> str:
+    """A record's tools on one line."""
     tools = ", ".join(map(tool_html, record.tools))
-    return (
-        f'<p class="step muted mono">$ {escape(record.command_line)}</p>'
-        f'<p class="note text-muted-sm">With {tools}</p>'
-    )
+    return f'<p class="note text-muted-sm">With {tools}</p>'
+
+
+def shared_tools(entries: Iterable[Entry | None]) -> str:
+    """The tools line every record among the entries has, or "" where they differ."""
+    lines = {tools_html(entry) for entry in entries if isinstance(entry, Record)}
+    return lines.pop() if len(lines) == 1 else ""
+
+
+def command_html(record: Record) -> str:
+    """A record's command as a developer types it."""
+    return f'<p class="step muted mono">$ {escape(record.command_line)}</p>'
 
 
 def invocation_html(record: Record) -> str:
@@ -4780,12 +4789,15 @@ def invocation_html(record: Record) -> str:
 
 
 def entry_html(
-    page: Page, key: str, *, anchor: str, root: str, base_ids: Mapping[str, str]
+    page: Page, key: str, *, anchor: str, base_ids: Mapping[str, str], tools: bool
 ) -> str:
+    """An entry of a build's page; tools is whether it names its own."""
+    root = "../" * len(page.tree.parts)
     entry = page.tree.records.get(key)
     comparison = page.comparisons.get(key)
     if isinstance(entry, Record):
-        body = command_html(entry) + invocation_html(entry)
+        body = command_html(entry) + (tools_html(entry) if tools else "")
+        body += invocation_html(entry)
         whole = url("", *output_file(key))
         base = base_href(page, key, root, base_ids)
         cited = cites(page.tree, page.series)
@@ -4832,16 +4844,16 @@ def tree_page(page: Page, footer: str) -> str:
     keys.sort(key=lambda key: not prominent(page, key))
     ids = anchors(keys)
     base_ids = anchors(page.base.records) if page.base else {}
-    sections = "".join(
-        f"<section><h2>{escape(name)}</h2><div>"
-        + "".join(
-            entry_html(page, key, anchor=ids[key], root=root, base_ids=base_ids)
-            for key in keys
-            if suite_of(key) == name
+    sections = ""
+    for name in suites(page):
+        named = [key for key in keys if suite_of(key) == name]
+        shared = shared_tools(map(tree.records.get, named))
+        entries = "".join(
+            entry_html(page, key, anchor=ids[key], base_ids=base_ids, tools=not shared)
+            for key in named
         )
-        + "</div></section>"
-        for name in suites(page)
-    )
+        sections += f"<section><h2>{escape(name)}</h2>{shared}<div>{entries}</div>"
+        sections += "</section>"
     body = back_link(root, tree.project, tree.commit, "index.html") + head + sections
     return html_page(title, root, body, footer)
 
