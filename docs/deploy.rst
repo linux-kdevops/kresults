@@ -294,6 +294,37 @@ Another records tree takes a drop-in on each of the two render units, for
 :cmd:`journalctl` ``--user-unit kresults-render`` has each render, and why
 one failed.
 
+A site that stays as it was
+===========================
+
+Records are filed and the page does not change: the unit that watches
+the tree has stopped. It watches through `inotify`_, of which a user
+has a fixed number of instances, 128 by default. A host with many
+units running reaches it, and the path unit then fails with ``Too many
+open files``:
+
+.. code-block:: console
+
+   $ systemctl --user status kresults-render.path
+   × kresults-render.path - kresults Records Watch
+        Active: failed (Result: resources)
+
+Start the watch again and render once, then load the page again:
+
+.. code-block:: console
+
+   $ systemctl --user restart kresults-render.path
+   $ systemctl --user start kresults-render.service
+
+Raise the limit so it does not come back, now and at each boot. Both
+lines need root:
+
+.. code-block:: console
+
+   $ sudo sysctl fs.inotify.max_user_instances=1024
+   $ echo 'fs.inotify.max_user_instances=1024' |
+       sudo tee /etc/sysctl.d/90-inotify.conf
+
 .. _blktests: https://github.com/linux-blktests/blktests
 .. _fio: https://github.com/axboe/fio
 .. _Git: https://git-scm.com
