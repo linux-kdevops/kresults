@@ -10,7 +10,8 @@ Run in the tree of the kernel under test, once the run has copied its
 results directory with, in it:
 
 - machine/, the facts of the machine under test: arch, cpuinfo, meminfo,
-  and version, the `git describe` of the blktests that ran;
+  and version, the `git describe` of the blktests that ran; url, where
+  that source can be read, is a tool's `url` when the run copies it;
 - NAME.stdout, what check printed for each group or test the run asked
   for, which alone says why a test did not run. Without it such a test
   leaves no record.
@@ -173,6 +174,19 @@ def qemu_of(file: Path) -> Json:
     return {**tool, "version": find(f"({VERSION.pattern})", printed)}
 
 
+def blktests_of(facts: Path) -> Json:
+    """Return the blktests that ran, as an entry names a tool.
+
+    Its url is the facts' own, of a run that copied one.
+    """
+    build = (facts / "version").read_text("utf-8").strip()
+    need(build, f"{facts / 'version'} names no blktests")
+    url = facts / "url"
+    source = url.read_text("utf-8").strip() if url.is_file() else ""
+    tool: Json = {"name": "blktests", "version": "", "build": build}
+    return tool | {"url": source} if source else tool
+
+
 def fields_of(file: Path) -> dict[str, str]:
     """Return a result file's fields: each line is a key, a tab and a value."""
     lines = file.read_text("utf-8", errors="replace").splitlines()
@@ -264,8 +278,6 @@ def file_results(args: argparse.Namespace) -> None:
     need(results.is_dir(), f"{results} is no directory")
     for fact in map(facts.joinpath, FACTS):
         need(fact.is_file(), f"{fact} does not exist: the run copies it")
-    blktests = (facts / "version").read_text("utf-8").strip()
-    need(blktests, f"{facts / 'version'} names no blktests")
     if args.producer_tree:
         args.producer_version = version_of(args.producer_tree)
     settings = config.read_bytes()
@@ -274,7 +286,7 @@ def file_results(args: argparse.Namespace) -> None:
     directory = args.records / args.project / name
     build = directory.joinpath(*names["configuration"], names["arch"])
     build /= names["compiler"]
-    ran: Json = {"tools": [{"name": "blktests", "version": "", "build": blktests}]}
+    ran: Json = {"tools": [blktests_of(facts)]}
     ran["tools"] += [qemu_of(args.qemu)] if args.qemu else []
     ran["config"] = "sha256:" + hashlib.sha256(settings).hexdigest()
     who = {"producer": {"name": args.producer, "version": args.producer_version}}

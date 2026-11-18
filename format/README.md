@@ -110,6 +110,11 @@ names the exact build, as one of:
 Two runs whose builds differ are two entries, even when their versions
 agree.
 
+A tool built from a public tree may have `url`, where the source its
+`build` names can be read, as
+`https://github.com/linux-blktests/blktests/commit/79c32fb31b7b`. A tool
+with none has no `url`.
+
 ## Command and environment
 
 `command` is the command as run at the top of the tree, its paths

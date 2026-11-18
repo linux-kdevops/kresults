@@ -433,6 +433,16 @@ class Validate(unittest.TestCase):
                 entries.append({**entries[0], field: value})
                 self.assertEqual(problems(files), [])
 
+    def test_url_of_a_tool(self) -> None:
+        files = good()
+        (tool,) = at(files, CHECKPATCH)["entries"][0]["tools"]
+        tool["url"] = "https://example.org/tool/commit/0123456789ab"
+        self.assertEqual(problems(files), [])
+        for url in ("", "javascript:alert(1)"):
+            with self.subTest(url=url):
+                tool["url"] = url
+                self.assert_problem(files, CHECKPATCH, "does not match")
+
     # Where a record lies.
 
     def test_project(self) -> None:

@@ -45,6 +45,10 @@ the version (`format/CHANGES.md`).
 - The text describes every field of a subject and of `series.json`, so
   that a producer can write a record from it. The schemas stay the exact
   form.
+- A tool may carry `url`, where the source its `build` names can be
+  read. A `git describe` names a commit and no tree, and a reader of a
+  record has no checkout to look it up in. It is optional: most tools
+  come from a package or a store path, which name their own source.
 - A series whose Message-ID holds a `/` is not recorded. No tool that
   sends patches makes one, and an escape would be a rule to write and to
   check for a case not yet met.

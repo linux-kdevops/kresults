@@ -149,8 +149,10 @@ the directory the run wrote and the build as ``krecord`` takes it:
 The directory holds ``machine/``, the facts of the machine under test,
 and what ``check`` printed for each group asked for, as ``NAME.stdout``:
 a test that did not run is a skip with the reason printed there, and
-leaves no record without it. ``--qemu FILE`` names the QEMU of the
-machine as a second tool. A result filed already is left as it is.
+leaves no record without it. A ``machine/url`` the run copies there is
+the ``url`` of blktests, where its source can be read. ``--qemu FILE``
+names the QEMU of the machine as a second tool. A result filed already
+is left as it is.
 
 Checking records
 ================

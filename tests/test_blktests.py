@@ -290,6 +290,22 @@ class BlktestsTest(unittest.TestCase):
         said = self.file(f"--qemu={missing}")
         self.assertEqual(said, f"no record: {missing} is no program\n")
 
+    def test_the_source_of_blktests_is_its_url(self) -> None:
+        source = "https://example.org/blktests/commit/0123456789ab"
+        blktests_: Json = {"name": "blktests", "version": "", "build": VERSION}
+        self.result("loop/nodev/loop/001", PASSED)
+        # An empty file names no source.
+        self.result("machine/url", "\n")
+        self.file()
+        (entry,) = self.read("blktests/nodev/loop/001.json")["entries"]
+        self.assertEqual(entry["tools"], [blktests_])
+        # Tools that differ are another entry.
+        self.result("machine/url", f"{source}\n")
+        self.file()
+        entries = self.read("blktests/nodev/loop/001.json")["entries"]
+        tools = [entry["tools"] for entry in entries]
+        self.assertEqual(tools, [[blktests_], [blktests_ | {"url": source}]])
+
     def test_a_test_on_a_device_asked_for_alone(self) -> None:
         self.result("block/003/nvme0n1/block/003", PASSED.replace("1.682s", "0.282s"))
         self.file()

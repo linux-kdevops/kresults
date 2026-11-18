@@ -210,6 +210,11 @@
           "description": "The exact build: its Nix store path, git describe of the source it was built from, a distribution's package and version, or tree for a tool in the tree under test",
           "type": "string",
           "minLength": 1
+        },
+        "url": {
+          "description": "Where the source the build names can be read, for a tool built from a public tree",
+          "type": "string",
+          "pattern": "^https?://"
         }
       }
     },
