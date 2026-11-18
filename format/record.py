@@ -463,6 +463,21 @@ def tool_of(name: str, path: str, printed: str) -> Json:
     return {"name": name, "version": versions[-1] if versions else "", "build": build}
 
 
+def installed(name: str, directory: Path) -> Json:
+    """Return a tool as an entry names it, from the files its install left.
+
+    version holds the `git describe` of its source, the tool's build, and
+    url, of an install that left one, where that source can be read.
+    """
+    version, url = directory / "version", directory / "url"
+    need(version.is_file(), f"{version} does not exist")
+    build = version.read_text("utf-8").strip()
+    need(build, f"{version} names no {name}")
+    source = url.read_text("utf-8").strip() if url.is_file() else ""
+    found: Json = {"name": name, "version": "", "build": build}
+    return found | {"url": source} if source else found
+
+
 def counted(file: Path, pattern: str) -> int | None:
     """Return the sum of a pattern's numbers in a file, or nothing without one."""
     try:
@@ -498,6 +513,16 @@ def memory_of(meminfo: Path) -> int:
     return int(total or 0) * 1024
 
 
+def machine() -> Json:
+    """Return the machine this program runs on, as an invocation names one."""
+    return {
+        "arch": os.uname().machine,
+        "cpu": find(r"^Model name:\s*(.+)$", run("lscpu")),
+        "cpus": len(os.sched_getaffinity(0)),
+        "memory": memory_of(MEMINFO),
+    }
+
+
 def invocation(who: Json, started: int) -> Json:
     """Return who ran the command, when and where, and what it used."""
     at = datetime.fromtimestamp(started, UTC)
@@ -506,12 +531,7 @@ def invocation(who: Json, started: int) -> Json:
         "started": at.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "seconds": max(0, int(time.time() - started)),
         **resources(),
-        "machine": {
-            "arch": os.uname().machine,
-            "cpu": find(r"^Model name:\s*(.+)$", run("lscpu")),
-            "cpus": len(os.sched_getaffinity(0)),
-            "memory": memory_of(MEMINFO),
-        },
+        "machine": machine(),
     }
 
 

@@ -41,6 +41,7 @@ from record import (
     exit_of,
     filed_from,
     find,
+    installed,
     made_by,
     memory_of,
     merged,
@@ -174,19 +175,6 @@ def qemu_of(file: Path) -> Json:
     return {**tool, "version": find(f"({VERSION.pattern})", printed)}
 
 
-def blktests_of(facts: Path) -> Json:
-    """Return the blktests that ran, as an entry names a tool.
-
-    Its url is the facts' own, of a run that copied one.
-    """
-    build = (facts / "version").read_text("utf-8").strip()
-    need(build, f"{facts / 'version'} names no blktests")
-    url = facts / "url"
-    source = url.read_text("utf-8").strip() if url.is_file() else ""
-    tool: Json = {"name": "blktests", "version": "", "build": build}
-    return tool | {"url": source} if source else tool
-
-
 def fields_of(file: Path) -> dict[str, str]:
     """Return a result file's fields: each line is a key, a tab and a value."""
     lines = file.read_text("utf-8", errors="replace").splitlines()
@@ -281,7 +269,7 @@ def file_results(args: argparse.Namespace) -> None:
     subject["build"] = names = built(config, settings, str(configuration_of(args)))
     directory = args.records / args.project / name
     build = build_under(directory, names)
-    ran: Json = {"tools": [blktests_of(facts)]}
+    ran: Json = {"tools": [installed("blktests", facts)]}
     ran["tools"] += [qemu_of(args.qemu)] if args.qemu else []
     ran["config"] = digest_of(settings)
     where = {"machine": machine_of(facts)}
