@@ -15,7 +15,6 @@ import argparse
 import contextlib
 import json
 import mailbox
-import os
 import re
 import sys
 from collections.abc import Sequence
@@ -26,7 +25,20 @@ from email.message import EmailMessage
 from email.parser import BytesParser
 from pathlib import Path
 
-from record import MESSAGE, Json, NoRecordError, need, placed, run, state, whole, write
+from record import (
+    MESSAGE,
+    Json,
+    NoRecordError,
+    add_tree,
+    exit_of,
+    need,
+    parser_of,
+    placed,
+    run,
+    touch,
+    whole,
+    write,
+)
 
 # The line b4 prep starts its tracking block with, in a cover letter's commit.
 TRACKING = "--- b4-submit-tracking ---"
@@ -239,22 +251,17 @@ def series_of(range_: str, project: str, mbox: Path | None = None) -> tuple[str,
     return named(tip, project), series | {"lists": []}
 
 
+def write_series(args: argparse.Namespace) -> None:
+    """Write the series.json of --range, or raise why it has none."""
+    name, series = series_of(args.range, args.project, args.mbox)
+    write(args.records / args.project / name / "series.json", series, "series")
+    touch(args.records)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    summary = (__doc__ or "").partition("\n")[0]
-    parser = argparse.ArgumentParser(
-        prog="krecord series", description=summary, allow_abbrev=False
-    )
+    parser = parser_of(__doc__, "series")
     parser.add_argument("--range", required=True, metavar="BASE..TIP")
     parser.add_argument("--mbox", type=Path, metavar="FILE")
-    parser.add_argument("--project", default="linux", metavar="NAME")
-    parser.add_argument("--records", type=Path, default=state(), metavar="DIR")
+    add_tree(parser)
     args = parser.parse_args(argv)
-    try:
-        name, series = series_of(args.range, args.project, args.mbox)
-    except NoRecordError as why:
-        sys.stderr.write(f"no series: {why}\n")
-        return 1
-    write(args.records / args.project / name / "series.json", series, "series")
-    # A path unit on the tree's top sees no write below it: mark the change.
-    os.utime(args.records)
-    return 0
+    return exit_of(lambda: write_series(args), "series", fails=True)

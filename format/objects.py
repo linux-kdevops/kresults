@@ -12,7 +12,6 @@ Print each object and each file not built, then the file written, and exit
 
 import argparse
 import json
-import os
 import re
 import sys
 from collections.abc import Sequence
@@ -20,11 +19,15 @@ from pathlib import Path
 
 from record import (
     Json,
-    NoRecordError,
+    add_build,
+    add_tree,
+    build_under,
     built,
     configuration_of,
+    exit_of,
     need,
-    state,
+    parser_of,
+    touch,
     whole,
     write,
 )
@@ -77,30 +80,21 @@ def objects_of(args: argparse.Namespace) -> tuple[Path, Json]:
     objects: Json = {"schema": 1, "commit": commit, "build": build}
     objects["objects"] = sorted({object_ for object_ in found.values() if object_})
     objects["unbuilt"] = sorted(source for source in found if not found[source])
-    place = directory.joinpath(*build["configuration"], build["arch"])
-    return place / build["compiler"] / "objects.json", objects
+    return build_under(directory, build) / "objects.json", objects
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    summary = (__doc__ or "").partition("\n")[0]
-    parser = argparse.ArgumentParser(
-        prog="krecord objects", description=summary, allow_abbrev=False
-    )
-    parser.add_argument("--config", type=Path, required=True, metavar="FILE")
-    name = parser.add_mutually_exclusive_group(required=True)
-    name.add_argument("--configuration", metavar="NAME")
-    name.add_argument("--configuration-file", type=Path, metavar="FILE")
-    parser.add_argument("--project", default="linux", metavar="NAME")
-    parser.add_argument("--records", type=Path, default=state(), metavar="DIR")
-    args = parser.parse_args(argv)
-    try:
-        file, objects = objects_of(args)
-    except NoRecordError as why:
-        sys.stderr.write(f"no objects: {why}\n")
-        return 1
+def write_objects(args: argparse.Namespace) -> None:
+    """Write a build's objects.json and print what it lists, or raise why not."""
+    file, objects = objects_of(args)
     for kind, paths in (("object", "objects"), ("unbuilt", "unbuilt")):
         sys.stderr.write("".join(f"{kind}: {path}\n" for path in objects[paths]))
     write(file, objects, "objects")
-    # A path unit on the tree's top sees no write below it: mark the change.
-    os.utime(args.records)
-    return 0
+    touch(args.records)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = parser_of(__doc__, "objects")
+    add_build(parser, required=True)
+    add_tree(parser)
+    args = parser.parse_args(argv)
+    return exit_of(lambda: write_objects(args), "objects", fails=True)

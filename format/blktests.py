@@ -19,9 +19,7 @@ Exit 0 either way, as krecord run does.
 """
 
 import argparse
-import hashlib
 import json
-import os
 import re
 import shutil
 import sys
@@ -33,21 +31,28 @@ from pathlib import Path
 from record import (
     VERSION,
     Json,
-    NoRecordError,
+    add_build,
+    add_producer,
+    add_tree,
+    build_under,
     built,
     configuration_of,
+    digest_of,
+    exit_of,
+    filed_from,
     find,
+    made_by,
     memory_of,
     merged,
     need,
     output_of,
+    parser_of,
     placed,
     printed_in,
     run,
     run_of,
-    state,
     tool_of,
-    version_of,
+    touch,
     write,
     write_base,
 )
@@ -265,27 +270,20 @@ def file_results(args: argparse.Namespace) -> None:
     results: Path = args.results
     config: Path = args.config
     facts = results / "machine"
-    lab = run("git", "config", "--global", "--get", "kresults.origin")
-    top, _, commit = run("git", "rev-parse", "--show-toplevel", "HEAD").partition("\n")
-    need(lab, "git config --global kresults.origin names no lab")
-    need(commit, "the working directory is no Git work tree")
+    lab, top, commit = filed_from()
     need(config.is_file(), f"{config} does not exist")
     need(results.is_dir(), f"{results} is no directory")
     for fact in map(facts.joinpath, FACTS):
         need(fact.is_file(), f"{fact} does not exist: the run copies it")
-    if args.producer_tree:
-        args.producer_version = version_of(args.producer_tree)
+    who = made_by(args, lab)
     settings = config.read_bytes()
     subject, name = placed(None, commit, args.project)
     subject["build"] = names = built(config, settings, str(configuration_of(args)))
     directory = args.records / args.project / name
-    build = directory.joinpath(*names["configuration"], names["arch"])
-    build /= names["compiler"]
+    build = build_under(directory, names)
     ran: Json = {"tools": [blktests_of(facts)]}
     ran["tools"] += [qemu_of(args.qemu)] if args.qemu else []
-    ran["config"] = "sha256:" + hashlib.sha256(settings).hexdigest()
-    who = {"producer": {"name": args.producer, "version": args.producer_version}}
-    who |= {"origin": lab, "run": args.run}
+    ran["config"] = digest_of(settings)
     where = {"machine": machine_of(facts)}
     reasons = reasons_in(results)
     found = results_in(results) + groups_in(reasons)
@@ -318,33 +316,16 @@ def file_results(args: argparse.Namespace) -> None:
     if wrote:
         write(build / "config", settings)
         write_base(directory, subject["commit"], name)
-        # A path unit on the tree's top sees no write below it: mark the change.
-        os.utime(args.records)
+        touch(args.records)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    summary = (__doc__ or "").partition("\n")[0]
-    parser = argparse.ArgumentParser(
-        prog="krecord blktests", description=summary, allow_abbrev=False
-    )
+    parser = parser_of(__doc__, "blktests")
     parser.add_argument("--results", type=Path, required=True, metavar="DIR")
-    parser.add_argument("--records", type=Path, default=state(), metavar="DIR")
-    parser.add_argument("--producer", required=True, metavar="NAME")
-    version = parser.add_mutually_exclusive_group(required=True)
-    version.add_argument("--producer-version", metavar="VERSION")
-    version.add_argument("--producer-tree", type=Path, metavar="DIR")
-    parser.add_argument("--run", default="manual", metavar="NAME")
-    parser.add_argument("--project", default="linux", metavar="NAME")
+    add_tree(parser)
+    add_producer(parser)
     # A test's record lies under the build of the kernel it ran on.
-    parser.add_argument("--config", type=Path, required=True, metavar="FILE")
-    name = parser.add_mutually_exclusive_group(required=True)
-    name.add_argument("--configuration", metavar="NAME")
-    name.add_argument("--configuration-file", type=Path, metavar="FILE")
+    add_build(parser, required=True)
     parser.add_argument("--qemu", type=Path, metavar="FILE")
-    try:
-        file_results(parser.parse_args(argv))
-    except NoRecordError as why:
-        sys.stderr.write(f"no record: {why}\n")
-    except Exception as error:  # noqa: BLE001
-        sys.stderr.write(f"no record: {type(error).__name__}: {error}\n")
-    return 0
+    args = parser.parse_args(argv)
+    return exit_of(lambda: file_results(args), fails=False)

@@ -30,7 +30,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -172,12 +172,37 @@ def state() -> Path:
     return Path(home, "krecords")
 
 
+def touch(records: Path) -> None:
+    """Mark a change of the records, as a path unit on their top sees no write below."""
+    os.utime(records)
+
+
+def filed_from() -> tuple[str, str, str]:
+    """Return where a run is filed from: the lab, the tree's top and its commit."""
+    lab = run("git", "config", "--global", "--get", "kresults.origin")
+    top, _, commit = run("git", "rev-parse", "--show-toplevel", "HEAD").partition("\n")
+    need(lab, "git config --global kresults.origin names no lab")
+    need(commit, "the working directory is no Git work tree")
+    return lab, top, commit
+
+
 def version_of(tree: Path) -> str:
     """Return what git describe names the work tree that holds a path's real one."""
     need(tree.exists(), f"{tree} does not exist")
     version = run("git", "-C", str(tree.resolve()), "describe", "--always", "--dirty")
     need(version, f"{tree} is in no Git work tree")
     return version
+
+
+def made_by(args: argparse.Namespace, lab: str) -> Json:
+    """Return who made a run, as its invocation says: the producer, the lab, the run.
+
+    The producer's version is what git describe names --producer-tree, given one.
+    """
+    tree: Path | None = args.producer_tree
+    version = version_of(tree) if tree else args.producer_version
+    producer = {"name": args.producer, "version": version}
+    return {"producer": producer, "origin": lab, "run": args.run}
 
 
 def configuration_of(args: argparse.Namespace) -> str | None:
@@ -473,13 +498,11 @@ def memory_of(meminfo: Path) -> int:
     return int(total or 0) * 1024
 
 
-def invocation(args: argparse.Namespace, lab: str, started: int) -> Json:
+def invocation(who: Json, started: int) -> Json:
     """Return who ran the command, when and where, and what it used."""
     at = datetime.fromtimestamp(started, UTC)
     return {
-        "producer": {"name": args.producer, "version": args.producer_version},
-        "origin": lab,
-        "run": args.run,
+        **who,
         "started": at.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "seconds": max(0, int(time.time() - started)),
         **resources(),
@@ -564,6 +587,17 @@ def built(config: Path, settings: bytes, configuration: str) -> Json:
     return {**names, "compiler": compiler}
 
 
+def build_under(directory: Path, build: Json) -> Path:
+    """Return the directory of a build, under its commit's."""
+    names = (*build["configuration"], build["arch"], build["compiler"])
+    return directory.joinpath(*names)
+
+
+def digest_of(settings: bytes) -> str:
+    """Return the hash an entry names its .config by."""
+    return "sha256:" + hashlib.sha256(settings).hexdigest()
+
+
 def file_run(args: argparse.Namespace) -> None:
     """File the run the environment names, or raise why it leaves no record."""
     environ = os.environ
@@ -571,18 +605,14 @@ def file_run(args: argparse.Namespace) -> None:
     # standard output and error: read them before anything is printed.
     printed = printed_in(args.output_file)
     started = started_at()
-    lab = run("git", "config", "--global", "--get", "kresults.origin")
-    top, _, commit = run("git", "rev-parse", "--show-toplevel", "HEAD").partition("\n")
+    lab, top, commit = filed_from()
     config: Path | None = args.config
-    need(lab, "git config --global kresults.origin names no lab")
-    need(commit, "the working directory is no Git work tree")
     need(config is None or config.is_file(), f"{config} does not exist")
     need(environ.get("EXIT_CODE") == "exited", "the command was stopped")
     configuration = configuration_of(args)
     checked = range_of(args)
     worked = file_of(args)
-    if args.producer_tree:
-        args.producer_version = version_of(args.producer_tree)
+    who = made_by(args, lab)
     subject, name = placed(checked, commit, args.project, worked, message_id_of(args))
     directory = build = args.records / args.project / name
     entry = ran(
@@ -598,13 +628,13 @@ def file_run(args: argparse.Namespace) -> None:
         # The .config says which compiler built: no producer names it too.
         named_too = any(one["name"] == compiler for one in entry["tools"])
         entry["tools"] += [] if named_too else [tool(compiler)]
-        entry["config"] = "sha256:" + hashlib.sha256(settings).hexdigest()
-        build = directory.joinpath(*names["configuration"], names["arch"], compiler)
+        entry["config"] = digest_of(settings)
+        build = build_under(directory, names)
     status = int(environ.get("EXIT_STATUS", "0"))
     entry |= {"status": "fail" if status else "pass", "exit": status}
     if any(printed):
         entry["output"] = output_of(printed, top)
-    entry["invocations"] = [invocation(args, lab, started)]
+    entry["invocations"] = [invocation(who, started)]
     # Without a name given, commands.json names the record of the command.
     given = named(args.output or "", configuration, checked, worked, compiler)
     filed = build / (given or record_of(entry["command"], args.project))
@@ -615,28 +645,66 @@ def file_run(args: argparse.Namespace) -> None:
         # The series names the commit the record lies under, the range's
         # tip where one was checked, not the tree's HEAD.
         write_base(directory, subject["commit"], name)
-    # A path unit on the tree's top sees no write below it: mark the change.
-    os.utime(args.records)
+    touch(args.records)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    summary = (__doc__ or "").partition("\n")[0]
-    parser = argparse.ArgumentParser(
-        prog="krecord run", description=summary, allow_abbrev=False
+def parser_of(doc: str | None, name: str) -> argparse.ArgumentParser:
+    """Return the parser of a subcommand, described by its docstring's first line."""
+    summary = (doc or "").partition("\n")[0]
+    return argparse.ArgumentParser(
+        prog=f"krecord {name}", description=summary, allow_abbrev=False
     )
+
+
+def add_tree(parser: argparse.ArgumentParser) -> None:
+    """Add the options that name the tree of records and the project in it."""
     parser.add_argument("--records", type=Path, default=state(), metavar="DIR")
-    for option in ("command", "producer"):
-        parser.add_argument(f"--{option}", required=True)
-    parser.add_argument("--output", metavar="NAME")
+    parser.add_argument("--project", default="linux", metavar="NAME")
+
+
+def add_producer(parser: argparse.ArgumentParser) -> None:
+    """Add the options that name who made a run (made_by())."""
+    parser.add_argument("--producer", required=True, metavar="NAME")
     version = parser.add_mutually_exclusive_group(required=True)
     version.add_argument("--producer-version", metavar="VERSION")
     version.add_argument("--producer-tree", type=Path, metavar="DIR")
     parser.add_argument("--run", default="manual", metavar="NAME")
-    parser.add_argument("--project", default="linux", metavar="NAME")
-    parser.add_argument("--config", type=Path, metavar="FILE")
-    name = parser.add_mutually_exclusive_group()
+
+
+def add_build(parser: argparse.ArgumentParser, *, required: bool) -> None:
+    """Add the options that name a build: its .config and its configuration."""
+    parser.add_argument("--config", type=Path, required=required, metavar="FILE")
+    name = parser.add_mutually_exclusive_group(required=required)
     name.add_argument("--configuration", metavar="NAME")
     name.add_argument("--configuration-file", type=Path, metavar="FILE")
+
+
+def exit_of(work: Callable[[], None], kind: str = "record", *, fails: bool) -> int:
+    """Return a subcommand's exit status once it did its work or said why not.
+
+    One that fails exits 1 with the reason. One that does not exits 0 whatever
+    went wrong, and says an error it did not expect too: it runs as an
+    ExecStopPost=, where a failure would change the unit's result.
+    """
+    try:
+        work()
+    except NoRecordError as why:
+        sys.stderr.write(f"no {kind}: {why}\n")
+        return int(fails)
+    except Exception as error:
+        if fails:
+            raise
+        sys.stderr.write(f"no {kind}: {type(error).__name__}: {error}\n")
+    return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = parser_of(__doc__, "run")
+    add_tree(parser)
+    parser.add_argument("--command", required=True)
+    parser.add_argument("--output", metavar="NAME")
+    add_producer(parser)
+    add_build(parser, required=False)
     checked = parser.add_mutually_exclusive_group()
     checked.add_argument("--range", metavar="RANGE")
     checked.add_argument("--range-file", type=Path, metavar="FILE")
@@ -667,13 +735,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "--range or --range-file names commits a tool read, and "
             "--message-id-file a series it took"
         )
-    try:
-        file_run(args)
-    except NoRecordError as why:
-        sys.stderr.write(f"no record: {why}\n")
-    except Exception as error:  # noqa: BLE001
-        sys.stderr.write(f"no record: {type(error).__name__}: {error}\n")
-    return 0
+    return exit_of(lambda: file_run(args), fails=False)
 
 
 if __name__ == "__main__":
