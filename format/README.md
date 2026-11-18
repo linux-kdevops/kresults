@@ -5,8 +5,8 @@
 This is version 1 of the format of the records ([CHANGES.md]), which
 this repository keeps on its `records` branch. Any producer may write
 them: a CI system, or a developer's own scripts.
-[record.schema.json], [series.schema.json] and [objects.schema.json]
-define each field.
+[record.schema.json], [series.schema.json], [posted.schema.json] and
+[objects.schema.json] define each field.
 
 ## What a record holds
 
@@ -287,9 +287,9 @@ linux/                                   the project
 │       └── fstests/xfs_bs4k_ss512/generic/001.json
 └── series/                              its series
     └── <message-id>/                    a series
+        ├── series.json                  what its first message says
         └── b4/
             ├── mbox.json                b4 mbox, or lorefetch
-            ├── mbox.mbx                 the thread it saved
             └── shazam.json              b4 shazam
 qemu/                                    another project
 └── v11.1.0-12-g0123456789ab/            a commit
@@ -444,27 +444,45 @@ build, as a record does. No tool prints these lists: the producer reads
 them from the `.cmd` file kbuild writes for each object.
 
 A series' own records lie under its Message-ID: `b4/mbox.json` for
-fetching the thread posted, `b4/mbox.mbx` for the thread saved, and
-`b4/shazam.json` for applying the series, its output what b4 printed.
-A reader takes the series' subject, author and date from the message
-that starts the thread in `mbox.mbx`, the one that answers no other. A
-series that does not apply has these records alone.
+fetching the thread posted, and `b4/shazam.json` for applying the
+series, its output what b4 printed. A series that does not apply has
+these records alone.
 
-A thread that lorefetch fetched is filed under the same two names, with
+Beside them lies the series' own `series.json`, which is no commit's:
+what the message of that Message-ID says of the series
+([posted.schema.json]). A reader takes the series' subject, author and
+date from it. The thread is no part of the records: its mails stay on
+the list, where the Message-ID finds them. The file holds:
+
+- `message_id`: the Message-ID, as the directory has it;
+- `subject`: the message's subject, whole, with its prefixes, as
+  `[PATCH v2 0/5]`, and its blanks single;
+- `author` and `date`: its `From`, as `Name <address>`, and its `Date`,
+  in UTC;
+- `revision`: the `vN` of the prefixes, and 1 without one;
+- `patches`: how many patches the series has, the `M` of the prefixes'
+  `N/M`, and 1 without one;
+- `change_id` and `text`: as a commit's `cover` has them of a message
+  (above), the text empty for a series whose first message is a patch.
+
+Whatever fetches the thread writes the file: `krecord run` from the mbox
+`--mbox` names, when it holds the message, and `krecord lore` from the
+maildir. A fetch that failed leaves none.
+
+A thread that lorefetch fetched is filed as `b4/mbox.json` as well, with
 lorefetch as the tool of its entry and `lorefetch --query QUERY` as its
-command, so a reader finds a series' thread in one place whatever
-fetched it. A series with `mbox.json` and `mbox.mbx` alone was fetched,
+command, so a reader finds how a series was fetched in one place whatever
+fetched it. A series with `series.json` and `mbox.json` alone was fetched,
 and nothing has applied it. `krecord lore` files the threads of the maildir
 lorefetch fills. A thread is a series when the message that starts it
 has a subject whose prefixes hold `PATCH`, as `[PATCH v3 0/2]` and
 `[RFC PATCH]` do: a reply whose thread the maildir lacks is none, nor is
 a `FAILED:` notice. A series with a prefix that names a kernel version,
 as `[PATCH 6.12 000/670]` and `[PATCH 6.6.y]` do, is for a stable tree
-and is not recorded. `mbox.mbx` holds the thread's mails in the maildir,
-the first one first and the rest by Message-ID. An invocation starts when
-lorefetch wrote the thread's last mail, and its `seconds` are 0: nothing
-keeps how long one thread of a query took. A thread that grew since it
-was filed is filed again whole, as one more invocation.
+and is not recorded. An invocation starts when lorefetch wrote the
+thread's last mail, and its `seconds` are 0: nothing keeps how long one
+thread of a query took. A series filed is fetched once: mail that joins
+its thread later adds no invocation.
 
 ## Versions
 
@@ -474,5 +492,6 @@ Each file names the version it follows as `schema`, one of
 [CHANGES.md]: https://github.com/linux-kdevops/kresults/blob/main/format/CHANGES.md
 [commands.json]: https://github.com/linux-kdevops/kresults/blob/main/format/commands.json
 [objects.schema.json]: https://github.com/linux-kdevops/kresults/blob/main/format/objects.schema.json
+[posted.schema.json]: https://github.com/linux-kdevops/kresults/blob/main/format/posted.schema.json
 [record.schema.json]: https://github.com/linux-kdevops/kresults/blob/main/format/record.schema.json
 [series.schema.json]: https://github.com/linux-kdevops/kresults/blob/main/format/series.schema.json

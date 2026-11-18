@@ -87,12 +87,15 @@ About is Octicons', under MIT.
   change-id in the header, and its text in one block above the patches,
   closed when it is longer than an output may be. One with a Message-ID
   links its thread as well; no thread holds the letter of a series not
-  yet sent. Without a letter there, the page shows the headers of the
-  mbox under the Message-ID.
+  yet sent. Without a letter there, the page shows what the series' own
+  `series.json`, under its Message-ID, says of the message it was posted
+  as, and its text. A date is shown in UTC, as both files keep it.
 - A series' page keeps its address, `<project>/<message-id>/`, whatever
   directory the records keep the series in. `series/` is the tree's own
   level: a page's address names what a viewer follows, a project and a
   series.
+- A series no commit came from shows no mailing lists. A list is told
+  from a person by the base's `MAINTAINERS`, and it has no base yet.
 - An entry names its tools on one line: each by name, the version it
   prints, and its build in parentheses, a link on a page where the tool
   has a `url`. A series' entry alone has the line, as it alone has the

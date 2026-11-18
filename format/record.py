@@ -21,6 +21,7 @@ a failing ExecStopPost= would change the unit's result.
 import argparse
 import functools
 import hashlib
+import importlib
 import json
 import os
 import re
@@ -727,6 +728,11 @@ def file_run(args: argparse.Namespace) -> None:
         # The series names the commit the record lies under, the range's
         # tip where one was checked, not the tree's HEAD.
         write_base(directory, subject["commit"], name)
+    elif args.mbox:
+        # Read only by a run that fetched a thread: run starts as every
+        # tool exits. The record stands whatever the thread holds.
+        posted = importlib.import_module("series").write_posted
+        exit_of(lambda: posted(directory, args.mbox), "series", fails=False)
     touch(args.records)
 
 
@@ -793,6 +799,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--file", metavar="NAME")
     parser.add_argument("--arguments-file", type=Path, metavar="FILE")
     parser.add_argument("--message-id-file", type=Path, metavar="FILE")
+    parser.add_argument("--mbox", type=Path, metavar="FILE")
     parser.add_argument("--tool", action="append", default=[], metavar="NAME")
     parser.add_argument("--env", action="append", default=[], metavar="VAR")
     parser.add_argument(
@@ -812,6 +819,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "--config names a build of the working tree, and "
             "--message-id-file a series apart from it"
         )
+    if args.mbox and not args.message_id_file:
+        parser.error("--mbox holds the thread of the series --message-id-file names")
     if ranged and args.message_id_file:
         parser.error(
             "--range or --range-file names commits a tool read, and "

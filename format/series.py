@@ -45,7 +45,7 @@ TRACKING = "--- b4-submit-tracking ---"
 # A subject's prefixes, each in its brackets, and what one says of the series.
 PREFIXES = re.compile(r"(?:\s*\[[^\]]*\])*")
 LETTER = re.compile(r"(?<![\w/])0+/\d+")
-COUNTER = re.compile(r"(?<![\w/])(\d+)/\d+")
+COUNTER = re.compile(r"(?<![\w/])(\d+)/(\d+)")
 REVISION = re.compile(r"\bv(\d+)\b")
 # Where a letter's text ends: the --- line above b4's trailers, or the signature.
 END = re.compile(r"^---\n(?:base-commit|change-id):|^-- +$", re.MULTILINE)
@@ -131,9 +131,14 @@ def letter_of(message: EmailMessage) -> Json | None:
     subject = given[prefixes.end() :].strip() if prefixes else ""
     if not (prefixes and subject and LETTER.search(prefixes[0])):
         return None
+    return told_by(message, subject, prefixes[0])
+
+
+def told_by(message: EmailMessage, subject: str, prefixes: str) -> Json:
+    """Return what a message says of its series, as a cover letter names it."""
     sender, sent = message["From"], message["Date"]
-    need(sender and sender.addresses, "its cover letter names no author")
-    need(sent and sent.datetime, "its cover letter has no date")
+    need(sender and sender.addresses, "the message it starts with names no author")
+    need(sent and sent.datetime, "the message it starts with has no date")
     # A date without a zone is in UTC.
     when = sent.datetime
     when = (when if when.tzinfo else when.replace(tzinfo=UTC)).astimezone(UTC)
@@ -144,8 +149,52 @@ def letter_of(message: EmailMessage) -> Json | None:
     name, address = sender.addresses[0].display_name, sender.addresses[0].addr_spec
     cover: Json = {"subject": subject, "author": f"{name} <{address}>".strip()}
     cover |= {"date": when.strftime(DATE), "change_id": change[1] if change else ""}
-    cover |= {"revision": revision_of(prefixes[0])}
+    cover |= {"revision": revision_of(prefixes)}
     return cover | {"text": body[: end.start() if end else None].strip("\n")}
+
+
+def posted_of(first: EmailMessage, name: str) -> Json:
+    """Return the series.json of a series posted as a Message-ID names it.
+
+    Its subject stays whole, as its prefixes say what the series is. One
+    that starts with a patch has no letter, and so no text.
+    """
+    prefixes, subject = parts_of(first["Subject"])
+    need(subject, f"{name} starts with no subject")
+    counted = COUNTER.search(prefixes)
+    posted = told_by(first, f"{prefixes} {subject}".strip(), prefixes)
+    if not LETTER.search(prefixes):
+        posted["text"] = ""
+    posted["patches"] = max(int(counted[2]), 1) if counted else 1
+    return {"schema": 1, "message_id": name} | posted
+
+
+def thread_of(file: Path) -> list[EmailMessage]:
+    """Return the messages of an mbox, in its order."""
+    with contextlib.closing(mailbox.mbox(file, create=False)) as box:
+        parser = BytesParser(policy=policy.default)
+        return [parser.parsebytes(box.get_bytes(key)) for key in box.iterkeys()]
+
+
+def write_posted(directory: Path, mbox: Path) -> None:
+    """Write a series' own series.json from the thread a tool fetched of it.
+
+    The directory is named for the Message-ID the tool took, and the
+    message of that name starts the series. A tool that failed left no
+    thread, or that of the series a tree held before, which names another.
+    """
+    name = directory.name
+    need(mbox.exists(), f"{mbox} does not exist")
+    try:
+        thread = thread_of(mbox)
+        ids = [str(one["Message-ID"] or "").strip() for one in thread]
+        first = dict(zip(ids, thread, strict=True)).get(f"<{name}>")
+        need(first, f"{mbox} holds no message {name}")
+        posted = posted_of(first, name) if first else {}
+    except (OSError, mailbox.Error, MessageError, LookupError, ValueError) as error:
+        why = f"{mbox} cannot be read: {error}"
+        raise NoRecordError(why) from error
+    write(directory / "series.json", posted, "series")
 
 
 def revision_of(prefixes: str) -> int:
@@ -189,9 +238,7 @@ def posted_as(file: Path | None, commits: Sequence[Json]) -> tuple[str, Json | N
     if file is None or not file.exists():
         return "", None
     try:
-        with contextlib.closing(mailbox.mbox(file, create=False)) as box:
-            parser = BytesParser(policy=policy.default)
-            thread = [parser.parsebytes(box.get_bytes(key)) for key in box.iterkeys()]
+        thread = thread_of(file)
         need(thread, f"{file} holds no message")
         # The first message is the root of a thread whose root was not saved.
         root = next((one for one in thread if not one["In-Reply-To"]), thread[0])

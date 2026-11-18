@@ -68,6 +68,10 @@ class Series(TypedDict):
     commits: list[dict[str, str]]
 
 
+class Posted(TypedDict):
+    message_id: str
+
+
 class Objects(TypedDict):
     commit: str
     build: Build
@@ -108,7 +112,7 @@ Draft7 = cast(
 HERE = Path(__file__).parent
 SCHEMAS: dict[str, Validator] = {
     kind: Draft7(json.loads((HERE / f"{kind}.schema.json").read_text("utf-8")))
-    for kind in ("record", "series", "objects")
+    for kind in ("record", "series", "posted", "objects")
 }
 
 
@@ -176,9 +180,11 @@ def locate(parts: tuple[str, ...]) -> Place | None:
     project, name, *rest = parts
     if name == SERIES:
         # A file beside the series' directories is of none of them.
-        if not rest[1:]:
-            return None
-        return Place(project, rest[0], (), tuple(rest[1:]), series=True)
+        return (
+            Place(project, rest[0], (), tuple(rest[1:]), series=True)
+            if rest[1:]
+            else None
+        )
     # A configuration is one directory or more, and a file lies below the
     # compiler.
     for at in range(1, len(rest) - 2):
@@ -192,15 +198,13 @@ def kind_of(place: Place) -> str:
     """Return which schema a JSON file follows, by where it lies."""
     if place.build and place.below == ("objects.json",):
         return "objects"
-    if not place.series and not place.build and place.below == ("series.json",):
-        return "series"
+    if not place.build and place.below == ("series.json",):
+        return "posted" if place.series else "series"
     return "record"
 
 
 def is_named(place: Place) -> bool:
     """Return whether the format names a file that is not JSON, where it lies."""
-    if place.series:
-        return place.below == ("b4", "mbox.mbx")
     return bool(place.build) and place.below == ("config",)
 
 
@@ -329,6 +333,11 @@ def check_series(place: Place, series: Series) -> Iterator[str]:
         yield "names a commit that is neither its last one nor, with none, its base"
 
 
+def check_posted(place: Place, posted: Posted) -> Iterator[str]:
+    if place.name != posted["message_id"]:
+        yield f"lies under {place.name}/, not {posted['message_id']}/"
+
+
 def check_objects(place: Place, objects: Objects) -> Iterator[str]:
     yield from check_commit(place, objects["commit"])
     yield from check_build(place, objects["build"])
@@ -337,6 +346,7 @@ def check_objects(place: Place, objects: Objects) -> Iterator[str]:
 CHECKS: dict[str, Callable[[Place, Any], Iterator[str]]] = {
     "record": check_record,
     "series": check_series,
+    "posted": check_posted,
     "objects": check_objects,
 }
 

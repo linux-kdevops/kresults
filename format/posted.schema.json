@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Posted",
+  "description": "A series as it was posted: what the message that starts it says of it, as PROJECT/series/MESSAGE-ID/series.json (format/README.md).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "message_id",
+    "subject",
+    "author",
+    "date",
+    "change_id",
+    "revision",
+    "text",
+    "patches"
+  ],
+  "properties": {
+    "schema": {
+      "description": "The format version the file follows (format/CHANGES.md)",
+      "const": 1
+    },
+    "message_id": {
+      "description": "The Message-ID of the series' first message, without <>, which names its directory",
+      "type": "string",
+      "pattern": "^[^<>\\s/]+@[^<>\\s/]+$"
+    },
+    "subject": {
+      "description": "The message's Subject, whole, with its prefixes, as [PATCH v2 0/5], and its blanks single",
+      "type": "string",
+      "minLength": 1
+    },
+    "author": {
+      "description": "Name <email>, the message's From",
+      "type": "string"
+    },
+    "date": {
+      "description": "The message's Date, in UTC",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "change_id": {
+      "description": "b4's change-id of the series, from the message's change-id: line; empty without one",
+      "type": "string"
+    },
+    "revision": {
+      "description": "The vN of the subject's prefixes; 1 without one",
+      "type": "integer",
+      "minimum": 1
+    },
+    "text": {
+      "description": "The cover letter's text, as a commit's series.json keeps it in cover (series.schema.json): the body up to the --- line above its base-commit: or change-id: line, else up to its signature. Empty for a series whose first message is a patch",
+      "type": "string"
+    },
+    "patches": {
+      "description": "How many patches the series has: the M of the N/M in the subject's prefixes; 1 without one",
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}

@@ -4,8 +4,8 @@
 
 `format/README.md` is the format as it stands. No records of version 1
 are published yet, so a decision changes it in place, as the level for
-series did. Once a tree is public, a change raises the version
-(`format/CHANGES.md`).
+series and the thread left out of the records did. Once a tree is
+public, a change raises the version (`format/CHANGES.md`).
 
 ## Decided
 
@@ -89,9 +89,9 @@ series did. Once a tree is public, a change raises the version
   none was recorded. The commit is no patch, so `commits` leaves it
   out. One with b4's tracking line that changes a file stays a commit.
 - A series applied from a mailing list keeps its cover letter in
-  `series.json` as well, read from the mail its producer fetched. The
-  mbox of a series lies under its Message-ID, and a producer that
-  applies the series itself records nothing there. The letter of a
+  `series.json` as well, read from the mail its producer fetched. A
+  producer that applies the series itself records nothing under its
+  Message-ID. The letter of a
   cover commit comes first: it is the tree's own, and the mail may be
   of an older revision. krecord series fetches nothing. It uses a thread
   only when each commit of the range has the subject of one of its
@@ -108,7 +108,7 @@ series did. Once a tree is public, a change raises the version
   file it checks.
 - A run that took a series gives its Message-ID in a file, as a run
   that read commits gives its range in one. The record holds it in
-  `subject.message_id` and lies under the Message-ID, with no
+  `subject.message_id` and lies under the Message-ID, with no commit's
   `series.json`: the series is recorded before it applies to any commit,
   and one that did not apply has no commit to lie under.
 - A project's series lie under one directory, `series`, and not beside
@@ -119,10 +119,31 @@ series did. Once a tree is public, a change raises the version
   by its place and not by an `@` in a name. A project may have any name,
   `series` too: it is the first directory of a path, and the level the
   second.
+- The thread of a series is no part of the records. What a reader shows
+  of it is in the series' own `series.json`: the subject, author and
+  date of its first message, its revision, how many patches it has, and
+  its cover letter's text. The records are published as a Git tree, and
+  104 threads took 9.3 MB of its 11.7 MB, about 100 MB a year for each
+  entry watched; their 104 `series.json` take 174 kB, the longest 13 kB.
+  The mails stay on the list, where the Message-ID finds them. The file
+  has the fields of a commit's `cover` and more, under another schema: a
+  commit's `series.json` requires a commit and a base, and a series not
+  yet applied has neither. The subject is kept whole, since its prefixes
+  say more than the revision: `RFC`, and the tree it is for.
+- What fetches a thread writes the series' `series.json`: `krecord lore`
+  from the maildir, and `krecord run` from the mbox `--mbox` names. A
+  second subcommand would have a producer run two programs for one
+  fetch, and a series with a record and no subject between them. The
+  mbox is used only when it holds the message of the Message-ID: a tree
+  keeps the thread of the series it fetched before, and a fetch that
+  fails leaves that one in place.
+- `krecord lore` files a series once, and a thread that gains mail adds
+  no invocation. It filed a grown thread again to save its mbox whole,
+  and no mbox is saved.
 - A thread lorefetch fetched is filed as `b4/mbox`, with lorefetch as its
   entry's tool. A record is named for the tool that ran, and this one is
-  not: the site and every reader take a series' thread from that one
-  name, and a second name would have each of them look in two places.
+  not: the site and every reader take how a series was fetched from that
+  one name, and a second name would have each of them look in two places.
   The entry still says what ran. Its command names the query and no
   maildir, which only places files, so `krecord lore` is given the query: the
   maildir keeps none.

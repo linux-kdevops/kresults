@@ -42,6 +42,7 @@ TEST = f"{COMMIT}/{GUEST}/fstests/xfs_4k/generic/001.json"
 APPLIED = "20260102-topic-v1-0-0123456789ab@example.org"
 UNAPPLIED = "20260103030405.1234-1-dev@example.org"
 SHAZAM = f"linux/series/{UNAPPLIED}/b4/shazam.json"
+POSTED = f"linux/series/{APPLIED}/series.json"
 CONFIG = "sha256:" + 64 * "1"
 OTHER_CONFIG = "sha256:" + 64 * "2"
 CLANG = {"ARCH": "x86_64", "LLVM": "1"}
@@ -132,11 +133,16 @@ def posted(message_id: str, **shazam: object) -> Files:
     """Return the files of a series, whose b4 shazam passed unless shazam says."""
     subject = {"message_id": message_id}
     fetch = f"b4 mbox --single-message {message_id}"
-    series = f"linux/series/{message_id}"
     return {
-        f"{series}/b4/mbox.json": record(subject, entry(fetch)),
-        f"{series}/b4/mbox.mbx": "From: A Developer <dev@example.org>\n\n",
-        f"{series}/b4/shazam.json": record(
+        f"linux/series/{message_id}/series.json": {
+            "schema": 1,
+            "message_id": message_id,
+            **COVER,
+            "subject": "[PATCH 0/1] A topic",
+            "patches": 1,
+        },
+        f"linux/series/{message_id}/b4/mbox.json": record(subject, entry(fetch)),
+        f"linux/series/{message_id}/b4/shazam.json": record(
             subject, entry(f"b4 shazam {message_id}", **shazam)
         ),
     }
@@ -479,6 +485,23 @@ class Validate(unittest.TestCase):
         found = dict(problems(moved(SHAZAM, path)))
         self.assertIn("its subject is a series", found[path])
 
+    def test_posted_under_another_message_id(self) -> None:
+        files = good()
+        at(files, POSTED)["message_id"] = UNAPPLIED
+        self.assert_problem(files, POSTED, f"lies under {APPLIED}/, not {UNAPPLIED}/")
+
+    def test_posted_fields(self) -> None:
+        for field, value, problem in (
+            ("patches", 0, "patches: 0 is less than the minimum of 1"),
+            ("subject", "", "subject: '' should be non-empty"),
+            ("date", "Mon, 2 Jan 2026", "date: 'Mon, 2 Jan 2026' does not match"),
+            ("commit", TIP, "'commit' was unexpected"),
+        ):
+            with self.subTest(field=field):
+                files = good()
+                at(files, POSTED)[field] = value
+                self.assert_problem(files, POSTED, problem)
+
     def test_described_directory(self) -> None:
         files, path = refiled("linux/v1.2-3-gfedcba987654", OTHER)
         self.assert_problem(files, path, f"does not name {TIP}")
@@ -504,7 +527,8 @@ class Validate(unittest.TestCase):
     def test_file_in_another_place(self) -> None:
         for file, path in (
             (SERIES, f"{COMMIT}/{TINY}/series.json"),
-            (SERIES, f"linux/series/{APPLIED}/series.json"),
+            (SERIES, POSTED),
+            (POSTED, SERIES),
             (OBJECTS, f"{COMMIT}/objects.json"),
             (OBJECTS, f"linux/series/{APPLIED}/{TINY}/objects.json"),
         ):
@@ -798,7 +822,7 @@ class Validate(unittest.TestCase):
             f"{COMMIT}/{TINY}/make/config",
             f"{COMMIT}/{TINY}/.config",
             f"{COMMIT}/{TINY}/b4/mbox.mbx",
-            f"linux/series/{APPLIED}/mbox.mbx",
+            f"linux/series/{APPLIED}/b4/mbox.mbx",
             f"linux/series/{APPLIED}/config",
             f"linux/series/{APPLIED}/{TINY}/config",
         ):

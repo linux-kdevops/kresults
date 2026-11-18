@@ -32,9 +32,6 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from difflib import SequenceMatcher
 from email import policy
-from email.errors import MessageError
-from email.message import EmailMessage
-from email.parser import BytesParser
 from email.utils import format_datetime, parseaddr, parsedate_to_datetime
 from enum import Enum
 from html import escape
@@ -866,16 +863,20 @@ class Series:
 
 @dataclass(frozen=True, slots=True)
 class Cover:
-    """The headers of a series' cover letter that its page shows, as given."""
+    """What a series.json says of a series' cover letter, or of its first message."""
 
     subject: str
     author: str
+    # As a mail gives one.
     date: str
+    # The Message-ID of a series' own series.json; "" of a commit's letter.
     message_id: str
     # b4's change-id line of the body, or "" when it has none.
     change_id: str = ""
-    # The text of a cover letter that series.json holds; None of a mailed one.
-    text: str | None = None
+    # The letter's text; "" of a series that starts with a patch.
+    text: str = ""
+    # How many patches the series was posted with; 0 of a commit's letter.
+    patches: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -954,9 +955,8 @@ APPLIERS = (
     (Applier.B4, "b4/shazam"),
     (Applier.B4, FETCH),
 )
-# The message b4 saved of a series, under its Message-ID.
-MBOX = "b4/mbox.mbx"
-# A commit's series.json, and a build's objects.json, which are no records.
+# A commit's series.json and a series' own, and a build's objects.json,
+# which are no records.
 SERIES_JSON = "series.json"
 OBJECTS = "objects"
 
@@ -1316,42 +1316,16 @@ def parse_objects(data: object) -> tuple[tuple[str, ...], tuple[str, ...]]:
     return strings(fields, "objects"), strings(fields, "unbuilt")
 
 
-def header(message: EmailMessage, name: str) -> str:
-    value = message.get(name)
-    return "" if value is None else str(value)
-
-
-def parse_cover(data: bytes) -> Cover:
-    """The headers of a cover letter from its mbox, or RecordError."""
-    try:
-        message = BytesParser(policy=policy.default).parsebytes(data, headersonly=True)
-        return Cover(
-            subject=header(message, "Subject"),
-            author=header(message, "From"),
-            date=header(message, "Date"),
-            message_id=header(message, "Message-Id"),
-            change_id=change_id_of(data),
-        )
-    except (MessageError, ValueError, IndexError) as error:
-        raise RecordError("its headers cannot be read") from error
-
-
-BODY = re.compile(rb"\r?\n\r?\n")
-CHANGE_ID = re.compile(rb"^change-id: *(\S+)[ \t]*\r?$", re.MULTILINE)
-
-
-def change_id_of(data: bytes) -> str:
-    """The change-id b4 ends a cover letter's body with, or ""."""
-    head = BODY.search(data)
-    found = CHANGE_ID.search(data, head.end()) if head else None
-    return found[1].decode("ascii", "replace") if found else ""
-
-
 def local_cover(data: object) -> Cover | None:
     """The cover letter a series.json holds, its date as a mail gives one."""
     if "cover" not in (series := json_object(data, "not a JSON object")):
         return None
-    fields = json_object(series["cover"], "cover is not a JSON object")
+    return cover_from(json_object(series["cover"], "cover is not a JSON object"))
+
+
+def cover_from(fields: Mapping[str, object]) -> Cover:
+    """A cover letter, or a series' own series.json, which has its fields and more."""
+    posted = "message_id" in fields
     try:
         date = want(fields, "date", str, "a string")
         when = datetime.strptime(date, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
@@ -1361,22 +1335,21 @@ def local_cover(data: object) -> Cover | None:
         subject=want(fields, "subject", str, "a string"),
         author=want(fields, "author", str, "a string"),
         date=format_datetime(when),
-        message_id="",
+        message_id=want(fields, "message_id", str, "a string") if posted else "",
         change_id=want(fields, "change_id", str, "a string"),
         text=want(fields, "text", str, "a string"),
+        patches=want(fields, "patches", int, "an integer") if posted else 0,
     )
 
 
 def load_cover(records: Path, file: Path | None) -> Cover | Unreadable | None:
+    """What a series' own series.json says of the message it was posted as."""
     if file is None or not regular(file):
         return None
     try:
-        return parse_cover(file.read_bytes())
-    except OSError as error:
-        reason = error.strerror or "cannot be read"
+        return cover_from(schema(read_json(file)))
     except RecordError as error:
-        reason = str(error)
-    return Unreadable(file.relative_to(records).as_posix(), reason)
+        return Unreadable(file.relative_to(records).as_posix(), str(error))
 
 
 def read_json(file: Path) -> object:
@@ -1500,10 +1473,10 @@ def load_came(records: Path, commit: Path) -> Came:
     if not series.message_id:
         return Came(series, cover)
     own = f"{SERIES}/{series.message_id}"
-    mbox = inside(commit.parent, f"{own}/{MBOX}")
+    posted = inside(commit.parent, f"{own}/{SERIES_JSON}")
     shazam = inside(commit.parent, f"{own}/b4/shazam.json")
-    # The letter series.json holds has its text, which the mbox's headers lack.
-    return Came(series, cover or load_cover(records, mbox), load_log(records, shazam))
+    # The letter the commit holds is the tree's own; one posted is of its time.
+    return Came(series, cover or load_cover(records, posted), load_log(records, shazam))
 
 
 def commit_files(commit: Path) -> list[Path]:
@@ -1647,7 +1620,7 @@ def load_unapplied(
                 entry = load_entry(records, file)
                 applied = isinstance(entry, Record) and entry.status is Status.PASSED
                 if key == FETCH or not applied:
-                    cover = load_cover(records, inside(directory, MBOX))
+                    cover = load_cover(records, inside(directory, SERIES_JSON))
                     recorded = history.get((project.name, directory.name))
                     found.append(
                         Unapplied(
@@ -2981,6 +2954,7 @@ def unapplied_row(item: Unapplied, marks: Marks) -> str:
     href = escape(url("", *item.parts, "index.html"))
     fields = [item.name]
     author = muted("not recorded")
+    patches = cover.patches if isinstance(cover, Cover) else 0
     if isinstance(cover, Cover):
         name, address = person(cover.author)
         author = escape(name) + small(address) if cover.author else muted("not given")
@@ -2991,7 +2965,7 @@ def unapplied_row(item: Unapplied, marks: Marks) -> str:
         f'<td><a href="{href}" class="{ROW_LINK}">{escape(unapplied_title(item))}</a>'
         f'<div class="lists">{lists_html(cover, ())}</div>{strip}</td>'
         f"<td>{author}</td><td>{date_html(cover)}</td>"
-        f'<td class="num"></td><td></td>'
+        f'<td class="num">{patches or ""}</td><td></td>'
         f"<td>{applied_html(item)}</td></tr>"
     )
     return covered(row, href)
@@ -4351,7 +4325,7 @@ def unapplied_page(item: Unapplied, marks: Marks, site: Site) -> str:
     cover = item.cover
     if isinstance(cover, Cover):
         author = escape(cover.author) if cover.author else muted("not given")
-        items = [("Author", author), *cover_items(cover)]
+        items = [("Author", author), *cover_items(cover, item.name)]
     else:
         items = [*cover_items(cover), ("Thread", thread_html(item.name))]
     items[:0] = version_items(marks, item.parts, root)
@@ -4369,12 +4343,13 @@ def unapplied_page(item: Unapplied, marks: Marks, site: Site) -> str:
     said = f"{tool} could not apply the series, so nothing of it was built or checked."
     if item.fetched:
         said = "The series was fetched. Nothing applied it yet."
+    anchor = anchors([item.key])[item.key]
     body = f"""
 {back_link(root, site.page("index.html"))}
 <section><h1>{escape(unapplied_title(item))}</h1>
 <p class="muted">{said}</p></section>
 <section>{definitions(items)}</section>
-<section><h2>{tool}</h2><details id="{anchors([item.key])[item.key]}" open>
+{cover_section(cover)}<section><h2>{tool}</h2><details id="{anchor}" open>
 <summary>{entry_head(item.key, record, None)}</summary>
 {shown}</details></section>
 """
@@ -4419,20 +4394,14 @@ def cover_items(
         return [("Cover letter", muted("not recorded")), *thread, *named]
     if isinstance(cover, Unreadable):
         return [("Cover letter", unreadable_html(cover)), *thread, *named]
-    if cover.text is not None:
-        # A cover letter series.json holds: one kept in a commit has no thread.
-        change = [("Change-id", mono(cover.change_id))] if cover.change_id else []
-        return [("Date", escape(cover.date)), *change, *thread, *named]
-    return [
-        ("Date", escape(cover.date) if cover.date else muted("not given")),
-        ("Thread", thread_html(cover.message_id or message_id)),
-        ("Mailing lists", lists_html(cover, lists)),
-    ]
+    # A cover letter kept in a commit has no thread.
+    change = [("Change-id", mono(cover.change_id))] if cover.change_id else []
+    return [("Date", escape(cover.date)), *change, *thread, *named]
 
 
 def cover_section(cover: Cover | Unreadable | None) -> str:
     """The text of a cover letter series.json holds, open when an output shows whole."""
-    if not isinstance(cover, Cover) or not (rows := lines(cover.text or "")):
+    if not isinstance(cover, Cover) or not (rows := lines(cover.text)):
         return ""
     opened = "" if len(rows) > CUT else " open"
     shown = "\n".join(map(pictured, rows))

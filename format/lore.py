@@ -14,8 +14,9 @@ A thread is a series when its first message, the one that answers no other
 of the maildir, posts a patch: its subject starts with a prefix that holds
 PATCH, as [PATCH v3 0/2] and [RFC PATCH] do. One whose prefix names a
 kernel version, as [PATCH 6.12 000/670], is for a stable tree and is left
-out. A series is filed under its Message-ID: the thread as b4/mbox.mbx,
-and b4/mbox.json, whose tool is lorefetch.
+out. A series is filed under its Message-ID: series.json, what its first
+message says of it, and b4/mbox.json, whose tool is lorefetch. A series
+filed already is left, and one that lacks its series.json gets it.
 
 --lorefetch names the directory an install of lorefetch left, with
 version, the `git describe` of its source, and url, where that source can
@@ -33,7 +34,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from email import policy
 from email.errors import MessageError
-from email.parser import BytesHeaderParser
+from email.parser import BytesHeaderParser, BytesParser
 from itertools import takewhile
 from pathlib import Path
 
@@ -41,6 +42,7 @@ from record import (
     MESSAGE,
     SERIES,
     Json,
+    NoRecordError,
     add_producer,
     add_tree,
     exit_of,
@@ -55,7 +57,7 @@ from record import (
     touch,
     write,
 )
-from series import parts_of
+from series import parts_of, posted_of
 
 # The directories of a maildir that hold its mails; tmp holds those still
 # being written.
@@ -64,17 +66,13 @@ ID = re.compile(r"<([^<>\s]+)>")
 # A word of a subject's prefixes that names a kernel version, the stable
 # tree a series is for: 6.12, 6.12.118 or 6.12.y.
 STABLE = re.compile(r"\d+\.\d+(?:\.\d+)?(?:\.y)?")
-# The line public-inbox starts each message of an mbox with.
-FROM = b"From mboxrd@z Thu Jan  1 00:00:00 1970\n"
-# A line of a mail that would start a message of the mbox. lorefetch
-# writes none, as it splits lore's mbox at each.
-SPLITS = re.compile(rb"^From ", re.MULTILINE)
 # The bytes a directory's name may take (README.md, "Where records go").
 LONGEST = 255
 # Why a thread leaves no record, in the order told.
 NO_PATCH = "start with no patch"
 FOR_STABLE = "are for a stable tree"
 NO_NAME = "have a Message-ID the format does not record"
+NO_SENDER = "start with a message that names no author or no date"
 RECORDED = "are recorded already"
 
 
@@ -150,20 +148,32 @@ def left_out(first: Mail) -> str:
     return "" if plain and MESSAGE.fullmatch(name) else NO_NAME
 
 
-def mbox_of(thread: Sequence[Mail]) -> bytes:
-    """Return a thread as the mbox lore gives of it, in the thread's order."""
-    return b"".join(
-        FROM + SPLITS.sub(b">From ", mail.file.read_bytes()).rstrip(b"\n") + b"\n\n"
-        for mail in thread
-    )
+def posted_by(first: Mail) -> Json | None:
+    """Return a series' own series.json, or None where its first message lacks one."""
+    parser = BytesParser(policy=policy.default)
+    try:
+        return posted_of(parser.parsebytes(first.file.read_bytes()), first.name)
+    except (NoRecordError, OSError, MessageError, LookupError, ValueError):
+        return None
 
 
-def held(mbox: Path) -> int:
-    """Return how many messages an mbox holds, none where there is no file."""
-    if not mbox.is_file():
-        return 0
-    with mbox.open("rb") as lines:
-        return sum(line.startswith(b"From ") for line in lines)
+def held_in(maildir: Path) -> list[Path]:
+    """Return the files of the mails a maildir holds, in a fixed order."""
+    return [
+        file
+        for part in HELD
+        for file in sorted((maildir / part).iterdir())
+        if file.is_file()
+    ]
+
+
+def tell(left: Mapping[str, int], threads: int, unread: int, files: int) -> None:
+    """Say how many threads and mails leave no record, each count with why."""
+    for why, count in left.items():
+        if count:
+            sys.stderr.write(f"no record: {count} of {threads} threads {why}\n")
+    if unread:
+        sys.stderr.write(f"no record: {unread} of {files} mails name no Message-ID\n")
 
 
 def file_series(args: argparse.Namespace) -> None:
@@ -182,15 +192,11 @@ def file_series(args: argparse.Namespace) -> None:
     who = made_by(args, lab)
     # What lorefetch took for one thread of a query, no file says.
     where = {"seconds": 0, "machine": machine()}
-    files = [
-        file
-        for part in HELD
-        for file in sorted((maildir / part).iterdir())
-        if file.is_file()
-    ]
+    files = held_in(maildir)
     read = [mail for mail in map(mail_of, files) if mail]
     threads = threads_of({mail.name: mail for mail in read})
-    left: dict[str, int] = dict.fromkeys((NO_PATCH, FOR_STABLE, NO_NAME, RECORDED), 0)
+    reasons = (NO_PATCH, FOR_STABLE, NO_NAME, NO_SENDER, RECORDED)
+    left: dict[str, int] = dict.fromkeys(reasons, 0)
     wrote = 0
     for thread in threads:
         name = thread[0].name
@@ -198,26 +204,25 @@ def file_series(args: argparse.Namespace) -> None:
         if why := left_out(thread[0]):
             left[why] += 1
             continue
-        directory: Path = args.records / args.project / SERIES / name / "b4"
-        filed = directory / "mbox.json"
-        # A series filed is left as it is until its thread holds more.
-        if filed.is_file() and held(directory / "mbox.mbx") >= len(thread):
+        directory: Path = args.records / args.project / SERIES / name
+        filed, own = directory / "b4" / "mbox.json", directory / "series.json"
+        if filed.is_file() and own.is_file():
             left[RECORDED] += 1
+            continue
+        if not (posted := posted_by(thread[0])):
+            left[NO_SENDER] += 1
+            continue
+        write(own, posted, "series")
+        wrote += 1
+        # A series fetched before is fetched no second time.
+        if filed.is_file():
             continue
         # lorefetch writes a mail once: the thread's last was fetched then.
         fetched = max(mail.file.stat().st_mtime for mail in thread)
         started = datetime.fromtimestamp(fetched, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         ran = {**entry, "invocations": [{**who, "started": started, **where}]}
-        write(directory / "mbox.mbx", mbox_of(thread))
         write(filed, merged(filed, {"project": args.project, "message_id": name}, ran))
-        wrote += 1
-    for why, count in left.items():
-        if count:
-            sys.stderr.write(f"no record: {count} of {len(threads)} threads {why}\n")
-    if unread := len(files) - len(read):
-        sys.stderr.write(
-            f"no record: {unread} of {len(files)} mails name no Message-ID\n"
-        )
+    tell(left, len(threads), len(files) - len(read), len(files))
     if wrote:
         touch(args.records)
 

@@ -422,7 +422,9 @@ class SeriesTest(unittest.TestCase):
         for date in ("", "soon"):
             named = self.mail("[PATCH 0/2] A topic", Date=date)
             said = self.write("--range=v1.2..", named, status=1)
-            self.assertEqual(said, "no series: its cover letter has no date\n")
+            self.assertEqual(
+                said, "no series: the message it starts with has no date\n"
+            )
         (self.root / "cover.mbx").write_bytes(b"")
         said = self.write("--range=v1.2..", named, status=1)
         self.assertEqual(

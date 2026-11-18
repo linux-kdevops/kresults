@@ -427,9 +427,6 @@ class RecordTest(unittest.TestCase):
         )
         self.file(printed(f"Looking up {posted} in lore"), options=options)
         series = f"linux/series/{posted}"
-        # The message the series was posted as, which the format names beside
-        # its record.
-        (self.records / series / "b4" / "mbox.mbx").write_text("From: A Developer\n\n")
         path = f"{series}/b4/mbox.json"
         (entry,) = self.entries(path)
         self.assertEqual(
@@ -438,6 +435,75 @@ class RecordTest(unittest.TestCase):
         subject = {"project": "linux", "message_id": posted}
         self.assertEqual(self.read(path)["subject"], subject)
         self.assertFalse((self.records / series / "series.json").exists())
+
+    def fetch(self, thread: str | None) -> tuple[str, Path]:
+        """Run record after b4 mbox left a thread, and return what it printed.
+
+        Then the directory of the series it took.
+        """
+        (self.tree / "build" / ".message-id").write_text("topic@example.org\n")
+        if thread is not None:
+            (self.tree / "build" / "thread.mbx").write_text(thread)
+        options = (
+            "--command=b4 mbox",
+            "--message-id-file=build/.message-id",
+            "--mbox=build/thread.mbx",
+            "--output=b4/mbox.json",
+        )
+        said = self.file(options=options)
+        series = self.records / "linux" / "series" / "topic@example.org"
+        self.assertIn(f"record: {series / 'b4' / 'mbox.json'}\n", said)
+        return said, series
+
+    def test_a_thread_fetched_says_what_its_series_was_posted_as(self) -> None:
+        said, series = self.fetch(
+            "From mboxrd@z Thu Jan  1 00:00:00 1970\n"
+            "Message-ID: <patch@example.org>\nIn-Reply-To: <topic@example.org>\n"
+            "Subject: [PATCH v2 1/3] init: example\n"
+            "Date: Fri, 2 Jan 2026 03:04:06 +0000\n"
+            "From: A Developer <dev@example.org>\n\nA patch.\n\n"
+            "From mboxrd@z Thu Jan  1 00:00:00 1970\n"
+            "Message-ID: <topic@example.org>\nSubject: [PATCH v2 0/3]  A topic\n"
+            "From: A Developer <dev@example.org>\n"
+            "Date: Fri, 2 Jan 2026 04:04:05 +0100\n\n"
+            "What the series is for.\n\n---\nbase-commit: 0123\n"
+            "change-id: 20260101-topic-0123456789ab\n"
+        )
+        self.assertIn(f"series: {series / 'series.json'}\n", said)
+        posted = {
+            "schema": 1,
+            "message_id": "topic@example.org",
+            "subject": "[PATCH v2 0/3] A topic",
+            "author": "A Developer <dev@example.org>",
+            "date": "2026-01-02T03:04:05Z",
+            "change_id": "20260101-topic-0123456789ab",
+            "revision": 2,
+            "text": "What the series is for.",
+            "patches": 3,
+        }
+        self.assertEqual(
+            self.read("linux/series/topic@example.org/series.json"), posted
+        )
+
+    def test_a_run_that_left_no_thread_of_its_series_keeps_its_record(self) -> None:
+        other = (
+            "From mboxrd@z Thu Jan  1 00:00:00 1970\n"
+            "Message-ID: <other@example.org>\nSubject: [PATCH] init: another\n\n"
+        )
+        thread = self.tree / "build" / "thread.mbx"
+        for left, why in (
+            (None, f"{Path('build/thread.mbx')} does not exist"),
+            (other, "build/thread.mbx holds no message topic@example.org"),
+        ):
+            thread.unlink(missing_ok=True)
+            said, series = self.fetch(left)
+            self.assertIn(f"no series: {why}\n", said)
+            self.assertFalse((series / "series.json").exists())
+            self.assertEqual(list(validate.check(self.records)), [])
+
+    def test_a_thread_of_no_series_named_is_an_error(self) -> None:
+        with self.assertRaises(SystemExit):
+            self.make("--mbox=build/thread.mbx")
 
     def test_no_record_with_a_message_id_that_is_none(self) -> None:
         options = (

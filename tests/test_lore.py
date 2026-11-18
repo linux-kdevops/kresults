@@ -43,6 +43,18 @@ ENTRY: Json = {
     "invocations": [INVOCATION],
 }
 COVER, SINGLE = "cover@example.org", "single@example.org"
+SENT = "Tue, 17 Nov 2026 19:00:00 +0100"
+POSTED: Json = {
+    "schema": 1,
+    "message_id": COVER,
+    "subject": "[PATCH v3 0/2] nvme: a series",
+    "author": "A Developer <dev@example.org>",
+    "date": "2026-11-17T18:00:00Z",
+    "change_id": "",
+    "revision": 3,
+    "text": COVER,
+    "patches": 2,
+}
 
 
 @unittest.skipUnless(shutil.which("git"), "lore reads the lab's name with git")
@@ -50,7 +62,6 @@ class LoreTest(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
         self.records = self.root / "records"
-        self.filed = self.records / "linux" / "series"
         self.maildir = self.root / "maildir"
         self.box = mailbox.Maildir(self.maildir, create=True)
         self.addCleanup(self.box.close)
@@ -75,7 +86,8 @@ class LoreTest(unittest.TestCase):
         headers = f"Message-ID: <{name}>\nSubject: {subject}\n"
         if answers:
             headers += f"In-Reply-To: <{answers}>\nReferences: <{answers}>\n"
-        self.put(f"{headers}From: A Developer <dev@example.org>\n\n{name}\n", fetched)
+        headers += "From: A Developer <dev@example.org>\n"
+        self.put(f"{headers}Date: {SENT}\n\n{name}\n-- \n2.50\n", fetched)
 
     def put(self, text: str, fetched: int = FIRST) -> None:
         file = self.maildir / "new" / self.box.add(text.encode())
@@ -103,29 +115,32 @@ class LoreTest(unittest.TestCase):
         filed = self.records / "linux" / "series" / name / "b4" / "mbox.json"
         return json.loads(filed.read_text("utf-8"))
 
-    def thread(self, name: str) -> list[str]:
-        """Return the Message-IDs of the thread saved of a series, in its order."""
-        saved = mailbox.mbox(self.filed / name / "b4" / "mbox.mbx")
-        self.addCleanup(saved.close)
-        return [str(message["Message-ID"]) for message in saved]
+    def posted(self, name: str) -> Json:
+        """Return the series.json of a series, what its first message says of it."""
+        own = self.records / "linux" / "series" / name / "series.json"
+        return json.loads(own.read_text("utf-8"))
 
-    def test_a_series_and_its_thread(self) -> None:
+    def test_a_series_and_what_it_was_posted_as(self) -> None:
         self.series()
         said = self.file()
+        series = self.records / "linux" / "series"
         written = [
-            self.filed / name / "b4" / file
+            f"{kind}: {series / name / file}\n"
             for name in (COVER, SINGLE)
-            for file in ("mbox.mbx", "mbox.json")
+            for kind, file in (("series", "series.json"), ("record", "b4/mbox.json"))
         ]
-        self.assertEqual(said, "".join(f"record: {file}\n" for file in written))
+        self.assertEqual(said, "".join(written))
         record = self.read(COVER)
         self.assertEqual(record["subject"], {"project": "linux", "message_id": COVER})
         self.assertEqual(record["entries"], [ENTRY])
-        thread = [COVER, "p1@example.org", "p2@example.org", "re@example.org"]
-        self.assertEqual(self.thread(COVER), [f"<{name}>" for name in thread])
-        self.assertEqual(self.thread(SINGLE), [f"<{SINGLE}>"])
-        mbox = (self.filed / COVER / "b4" / "mbox.mbx").read_bytes()
-        self.assertTrue(mbox.startswith(lore.FROM + b"Message-ID: <cover@"))
+        self.assertEqual(self.posted(COVER), POSTED)
+        # A patch alone is its series: it has no letter, and so no text.
+        alone = {"message_id": SINGLE, "subject": "[RFC PATCH] nvme: alone"}
+        alone |= {"revision": 1, "text": "", "patches": 1}
+        self.assertEqual(self.posted(SINGLE), POSTED | alone)
+        # No mail lies with the records.
+        kept = {file.name for file in series.rglob("*") if file.is_file()}
+        self.assertEqual(kept, {"series.json", "mbox.json"})
 
     def test_what_is_no_series_leaves_no_record(self) -> None:
         self.series()
@@ -154,7 +169,8 @@ class LoreTest(unittest.TestCase):
         escape = lore.Mail(Path(), "a\x1b[31m@example.org", "[PATCH] x", ())
         self.assertEqual(lore.left_out(escape), lore.NO_NAME)
         self.read(COVER)
-        names = sorted(series.name for series in self.filed.iterdir())
+        filed = (self.records / "linux" / "series").iterdir()
+        names = sorted(series.name for series in filed)
         self.assertEqual(names, [COVER, SINGLE])
         # Nothing is written outside the records.
         kept = sorted(path.name for path in self.root.iterdir())
@@ -168,26 +184,35 @@ class LoreTest(unittest.TestCase):
         self.assertEqual(said, "no record: 2 of 2 threads are recorded already\n")
         self.assertEqual(self.read(COVER), before)
 
-    def test_a_reply_that_arrives_makes_the_thread_fuller(self) -> None:
+    def test_a_reply_that_arrives_adds_nothing(self) -> None:
         self.series()
         self.file()
+        before = self.read(COVER)
         self.mail(
             "late@example.org", "Re: [PATCH v3 0/2] nvme: a series", COVER, SECOND
         )
-        said = self.file().splitlines()
-        self.assertEqual(said[2], "no record: 1 of 2 threads are recorded already")
-        self.assertEqual(len(self.thread(COVER)), 5)
-        (entry,) = self.read(COVER)["entries"]
-        started = [invocation["started"] for invocation in entry["invocations"]]
-        self.assertEqual(started, ["2026-11-17T18:02:52Z", "2026-11-17T19:02:52Z"])
+        said = self.file()
+        self.assertEqual(said, "no record: 2 of 2 threads are recorded already\n")
+        self.assertEqual(self.read(COVER), before)
 
-    def test_a_line_that_would_split_the_mbox_is_quoted(self) -> None:
-        self.put(f"Message-ID: <{SINGLE}>\nSubject: [PATCH] x\n\nFrom here on\n")
+    def test_a_series_filed_without_its_series_json_gets_it(self) -> None:
+        self.series()
         self.file()
-        self.assertEqual(self.thread(SINGLE), [f"<{SINGLE}>"])
-        self.assertEqual(
-            self.file(), "no record: 1 of 1 threads are recorded already\n"
-        )
+        before = self.read(COVER)
+        own = self.records / "linux" / "series" / COVER / "series.json"
+        own.unlink()
+        said = self.file("--run=run-2").splitlines()
+        self.assertEqual(said[0], f"series: {own}")
+        self.assertEqual(said[1], "no record: 1 of 2 threads are recorded already")
+        self.assertEqual(self.posted(COVER), POSTED)
+        # It was fetched once.
+        self.assertEqual(self.read(COVER), before)
+
+    def test_a_first_message_with_no_date_leaves_no_record(self) -> None:
+        self.put(f"Message-ID: <{SINGLE}>\nSubject: [PATCH] x\nFrom: a@b.org\n\n")
+        said = self.file()
+        self.assertEqual(said, f"no record: 1 of 1 threads {lore.NO_SENDER}\n")
+        self.assertFalse(self.records.exists())
 
     def test_mails_that_answer_each_other_end(self) -> None:
         self.mail("a@example.org", "[PATCH] a", "b@example.org")

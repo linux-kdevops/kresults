@@ -11,6 +11,7 @@ removed, and what a reader of the version before must do.
 
 The first version, as [README.md] gives it. It changed in place until
 the first tree of records was published: a tree written before a
-project's series lay under `series/` is not read.
+project's series lay under `series/`, each with its `series.json` and no
+`b4/mbox.mbx`, is not read.
 
 [README.md]: https://github.com/linux-kdevops/kresults/blob/main/format/README.md

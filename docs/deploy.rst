@@ -90,7 +90,10 @@ a line, and the record's
 command is ``--command`` with each after it, quoted where a shell needs
 it. ``--message-id-file`` names a file that holds the Message-ID
 of the series a tool took, and the record lies under the Message-ID,
-not the tree's commit.
+not the tree's commit. ``--mbox`` then names the thread the tool saved, as
+``b4 mbox`` does, and ``krecord`` writes the series' own ``series.json``
+from the message of that Message-ID in it: the subject, the author, the
+date. An mbox without the message leaves the record alone.
 
 A run the format cannot file leaves no record: ``krecord`` says why in one
 line and exits 0. That is a run with no lab named, outside a Git work
@@ -170,8 +173,9 @@ threads that match a query, with the maildir and that query:
 the directory an install of lorefetch left, with ``version``, the
 ``git describe`` of its source, and ``url``, where that source can be
 read. Without it lorefetch is the one on ``PATH``, named by its store path
-or its package. A series filed already is left as it is until its thread
-holds more mails.
+or its package. Beside the record of the fetch it writes the series' own
+``series.json``, and none of the mail. A series filed already is left as it
+is, and one that lacks its ``series.json`` gets it.
 
 ``krecord sample`` files one run that a machine under test made earlier,
 as a benchmark's is. Run it at the top of the tree of the kernel that

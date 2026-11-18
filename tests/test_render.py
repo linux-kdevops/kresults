@@ -15,6 +15,7 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from email import policy
 from email.parser import BytesParser
+from email.utils import parsedate_to_datetime
 from itertools import takewhile
 from pathlib import Path
 from urllib.parse import unquote
@@ -22,6 +23,7 @@ from urllib.parse import unquote
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "format"))
 
 import render
+import series
 import test_validate
 import validate
 from render import Change
@@ -1093,6 +1095,46 @@ def unapplied(
     put(series / f"{key}.json", {**data, "subject": subject})
 
 
+def letter(
+    subject: str,
+    date: str | None,
+    author: str = "A <a@x>",
+    change: str = "",
+    text: str = "",
+) -> dict[str, object]:
+    """A series' own series.json, less its Message-ID, from a mail's headers.
+
+    The date is the mail's, written in UTC as krecord does. One that is no
+    date, and a mail without one, leave a file no reader accepts.
+    """
+    try:
+        when = parsedate_to_datetime(date or "")
+        when = (when if when.tzinfo else when.replace(tzinfo=UTC)).astimezone(UTC)
+        dated = {"date": when.strftime("%Y-%m-%dT%H:%M:%SZ")}
+    except ValueError:
+        dated = {} if date is None else {"date": date}
+    counted = re.search(r"/(\d+)\]", subject)
+    revision = re.search(r"\bv(\d+)\b", subject.partition("]")[0])
+    posted: dict[str, object] = {"schema": 1, "subject": subject, "author": author}
+    posted |= dated
+    posted |= {"change_id": change, "revision": int(revision[1]) if revision else 1}
+    return posted | {"text": text, "patches": int(counted[1]) if counted else 1}
+
+
+def post(
+    records: Path, message_id: str, posted: Mapping[str, object], project: str = "linux"
+) -> None:
+    """File what a series was posted as, under its Message-ID."""
+    file = records / project / "series" / message_id / "series.json"
+    put(file, {**posted, "message_id": message_id})
+
+
+def fixture(message_id: str) -> dict[str, object]:
+    """What krecord writes of the cover letter in FIXTURES, posted as a Message-ID."""
+    (first,) = series.thread_of(FIXTURES / "cover.mbx")
+    return series.posted_of(first, message_id)
+
+
 class NotApplied(unittest.TestCase):
     def setUp(self) -> None:
         self.dir = Path(tempfile.mkdtemp())
@@ -1104,7 +1146,7 @@ class NotApplied(unittest.TestCase):
         shazam = record("fail", NOT_APPLIED, command=command, env={})
         unapplied(self.records, MESSAGE_ID, "b4/shazam", shazam)
         unapplied(self.records, MESSAGE_ID, "b4/mbox", record(env={}))
-        shutil.copyfile(FIXTURES / "cover.mbx", self.b4 / "mbox.mbx")
+        post(self.records, MESSAGE_ID, fixture(MESSAGE_ID))
         long = "".join(f"line {n}\n" for n in range(render.CUT + 1))
         local = record("fail", long, command="b4 shazam -m xfs.mbx", env={})
         unapplied(self.records, MBOX_ID, "b4/shazam", local)
@@ -1117,8 +1159,7 @@ class NotApplied(unittest.TestCase):
         )
 
     def test_not_commits(self) -> None:
-        lonely = self.records / "linux" / "series" / "lonely@x"
-        put(lonely / "b4" / "mbox.mbx", "Subject: s\n")
+        post(self.records, "lonely@x", letter("s", None))
         unapplied(self.records, "fetched@x", "b4/mbox", record())
         unapplied(self.records, "lost@x", "b4/mbox", record("fail", "no message\n"))
         trees = render.load(self.records, {})
@@ -1150,15 +1191,10 @@ class NotApplied(unittest.TestCase):
         tool = {"name": "lorefetch", "version": "", "build": "v0.3-4-g0123456789ab"}
         fetched = record(command="lorefetch --query s:PATCH", env={}, tools=[tool])
         unapplied(self.records, name, "b4/mbox", fetched)
-        put(
-            self.records / "linux" / "series" / name / "b4" / "mbox.mbx",
-            f"From mboxrd@z Thu Jan  1 00:00:00 1970\nMessage-Id: <{name}>\n"
-            + cover_letter(
-                "[PATCH 0/2] nvme: <b>wide</b>", "Thu, 05 Nov 2026 10:00:00 +0000"
-            )
-            + "\nRe: text\n",
-        )
-        add_series(self.records, "v1-1-gbuilt", "[PATCH] built")
+        date = "Thu, 05 Nov 2026 11:00:00 +0100"
+        wide = letter("[PATCH 0/2] nvme: <b>wide</b>", date, text="Why <i>wide</i>.")
+        post(self.records, name, wide)
+        add_series(self.records, "v1-1-gbuilt", None)
         index = self.page()
         rows = re.findall(r"<tr data-search.*?</tr>", index, re.DOTALL)
         states = {
@@ -1180,6 +1216,9 @@ class NotApplied(unittest.TestCase):
             f'<a href="https://lore.kernel.org/all/{name}/" class="mono">{name}</a>'
         )
         self.assertIn(f"<dt>Thread</dt><dd>{thread}</dd>", page)
+        self.assertIn(
+            "<summary>1 line</summary><pre>Why &lt;i&gt;wide&lt;/i&gt;.<", page
+        )
         self.assertIn("$ lorefetch --query s:PATCH", page)
         self.assertIn("With lorefetch (v0.3-4-g0123456789ab)", page)
         stats = (self.output / "stats.html").read_text(encoding="utf-8")
@@ -1209,7 +1248,8 @@ class NotApplied(unittest.TestCase):
     def test_no_lists(self) -> None:
         none = '<span class="muted">none</span>'
         page = self.page("linux", MESSAGE_ID)
-        self.assertIn(f"<dt>Mailing lists</dt><dd>{none}</dd>", page)
+        # They are known once the series applies, on a base that names them.
+        self.assertNotIn("<dt>Mailing lists</dt>", page)
         subject = "[PATCH RFC 0/2] Support for wide discards"
         index = self.page()
         self.assertIn(f'{subject}</a><div class="lists">{none}</div>', index)
@@ -1225,8 +1265,9 @@ class NotApplied(unittest.TestCase):
         self.assertIn(f"<h1>{subject}</h1>", page)
         self.assertIn("b4 could not apply the series", page)
         self.assertIn("<dd>A Developer &lt;dev@example.org&gt;</dd>", page)
-        thread = "20260101-topic-v1-0-0123456789ab@example.org"
-        self.assertIn(f'<a href="https://lore.kernel.org/all/{thread}/"', page)
+        self.assertIn(f'<a href="https://lore.kernel.org/all/{MESSAGE_ID}/"', page)
+        self.assertIn('<section id="cover"><h2>Cover letter</h2><details>', page)
+        self.assertIn("This series adds a new block layer feature", page)
         self.assertIn(f"$ b4 shazam {MESSAGE_ID}", page)
         self.assertIn('<section><h2>b4</h2><details id="r-b4-shazam" open>', page)
         self.assertIn('<span class="badge fail">fail, exit 1</span>', page)
@@ -1240,7 +1281,7 @@ class NotApplied(unittest.TestCase):
         self.assertIn('<dt>Producer</dt><dd><span class="mono">kdevops-ng</span>', page)
 
     def test_b4_without_cover(self) -> None:
-        (self.b4 / "mbox.mbx").unlink()
+        (self.b4.parent / "series.json").unlink()
         page = self.page("linux", MESSAGE_ID)
         self.assertIn(f"<h1>{MESSAGE_ID}</h1>", page)
         self.assertIn('<dt>Cover letter</dt><dd><span class="muted">not recorded', page)
@@ -1278,8 +1319,8 @@ class NotApplied(unittest.TestCase):
         self.assertIn(f'<td><a href="{href}" class="row-link">{subject}</a>', index)
         self.assertIn(
             '<td>A Developer<div class="text-muted-sm">dev@example.org</div></td>'
-            '<td>2026-01-01<div class="text-muted-sm">09:30 +0100</div></td>'
-            '<td class="num"></td><td></td>'
+            '<td>2026-01-01<div class="text-muted-sm">08:30 +0000</div></td>'
+            '<td class="num">2</td><td></td>'
             '<td><span class="badge fail">cannot apply</span></td></tr>',
             index,
         )
@@ -1400,7 +1441,7 @@ class Findings(unittest.TestCase):
         self.assertIn("not set against a base", render.suite_findings(page))
 
     def test_index_columns(self) -> None:
-        cover = render.parse_cover((FIXTURES / "cover.mbx").read_bytes())
+        cover = render.cover_from(fixture("m@x"))
         self.assertEqual(
             render.author_parts(cover, SERIES), ("A Developer", "dev@example.org")
         )
@@ -1410,10 +1451,10 @@ class Findings(unittest.TestCase):
         self.assertEqual(render.index_title(cover, three), cover.subject)
 
     def test_date_and_time(self) -> None:
-        cover = render.parse_cover((FIXTURES / "cover.mbx").read_bytes())
+        cover = render.cover_from(fixture("m@x"))
         self.assertEqual(
             render.date_html(cover),
-            '2026-01-01<div class="text-muted-sm">09:30 +0100</div>',
+            '2026-01-01<div class="text-muted-sm">08:30 +0000</div>',
         )
         unknown = render.Cover("", "", "Tue, 29 Sep 2026 13:17:10 -0000", "")
         self.assertEqual(
@@ -1621,24 +1662,43 @@ class Parse(unittest.TestCase):
 
 class CoverLetter(unittest.TestCase):
     def test_fixture(self) -> None:
-        cover = render.parse_cover((FIXTURES / "cover.mbx").read_bytes())
+        """What krecord writes of a first message is what the pages show of it."""
+        posted = fixture("m@x")
+        cover = render.cover_from(posted)
         self.assertEqual(
-            cover,
+            dataclasses.replace(cover, text=""),
             render.Cover(
                 subject="[PATCH RFC 0/2] Support for wide discards",
                 author="A Developer <dev@example.org>",
-                date="Thu, 01 Jan 2026 09:30:00 +0100",
-                message_id="<20260101-topic-v1-0-0123456789ab@example.org>",
+                date="Thu, 01 Jan 2026 08:30:00 +0000",
+                message_id="m@x",
                 change_id="20260101-topic-0123456789ab",
+                patches=2,
             ),
         )
+        self.assertEqual(cover.text, posted["text"])
+        self.assertTrue(cover.text)
 
-    def test_absent_headers(self) -> None:
-        self.assertEqual(render.parse_cover(b""), render.Cover("", "", "", ""))
-
-    def test_unreadable_headers(self) -> None:
-        with self.assertRaises(render.RecordError):
-            render.parse_cover(b"From: ]t, :a?\x81)\n")
+    def test_fields_a_page_cannot_show(self) -> None:
+        for field, value, reason in (
+            (
+                "date",
+                "Thu, 01 Jan 2026 09:30:00 +0100",
+                "the cover's date is no time in UTC",
+            ),
+            ("patches", "2", "patches is not an integer"),
+            ("subject", None, "subject is not a string"),
+            ("schema", 2, "schema is not 1"),
+        ):
+            with (
+                self.subTest(field=field),
+                tempfile.TemporaryDirectory() as records,
+            ):
+                file = Path(records, "linux", "series", "m@x", "series.json")
+                put(file, fixture("m@x") | {field: value})
+                cover = render.load_cover(Path(records), file)
+                path = "linux/series/m@x/series.json"
+                self.assertEqual(cover, render.Unreadable(path, reason))
 
     def test_thread_url(self) -> None:
         bare = "20260101-topic-v1-0-0123456789ab@example.org"
@@ -1655,7 +1715,7 @@ class CoverLetter(unittest.TestCase):
     def test_thread_from_series(self) -> None:
         bare = "20261104-cache-v8-0-eea5b90e4318@kernel.org"
         thread = f"https://lore.kernel.org/all/{bare}/"
-        for cover in (render.parse_cover(b""), None):
+        for cover in (render.Cover("", "", "", ""), None):
             items = dict(render.cover_items(cover, bare))
             self.assertIn(thread, items["Thread"])
         self.assertNotIn("Thread", dict(render.cover_items(None)))
@@ -1849,9 +1909,7 @@ class SeriesPage(unittest.TestCase):
             fields["cover"] = fields.pop("cover_kept")
         put(series / "series.json", series_json(patch, message_id=message_id, **fields))
         if cover:
-            mbox = self.records / "linux" / "series" / THREAD / "b4" / "mbox.mbx"
-            mbox.parent.mkdir(parents=True)
-            shutil.copyfile(FIXTURES / "cover.mbx", mbox)
+            post(self.records, THREAD, fixture(THREAD))
         put(
             self.records / "linux" / "v2" / "series.json", series_json(commit("lonely"))
         )
@@ -2177,7 +2235,7 @@ class SeriesPage(unittest.TestCase):
         subject = "[PATCH RFC 0/2] Support for wide discards"
         self.assertIn(f"<h1>{subject}</h1>", html)
         self.assertIn("<dd>A Developer &lt;dev@example.org&gt;</dd>", html)
-        self.assertIn("<dd>Thu, 01 Jan 2026 09:30:00 +0100</dd>", html)
+        self.assertIn("<dd>Thu, 01 Jan 2026 08:30:00 +0000</dd>", html)
         self.assertIn(f'<a href="https://lore.kernel.org/all/{THREAD}/"', html)
         lists = (
             '<span class="tag" title="linux-kernel@vger.kernel.org">LKML</span>'
@@ -2196,7 +2254,7 @@ class SeriesPage(unittest.TestCase):
         )
         self.assertIn(
             '<td>A Developer<div class="text-muted-sm">dev@example.org</div></td>'
-            '<td>2026-01-01<div class="text-muted-sm">09:30 +0100</div></td>'
+            '<td>2026-01-01<div class="text-muted-sm">08:30 +0000</div></td>'
             '<td class="num">1</td>',
             index,
         )
@@ -2464,6 +2522,7 @@ class Layout(unittest.TestCase):
         for path, key in (
             ("linux/v1/b/x86_64/clang/make/all.json", ("linux", "v1", *B.split("/"))),
             ("linux/series/m@x/b4/shazam.json", ("linux", "m@x")),
+            ("linux/series/m@x/series.json", ("linux", "m@x")),
             ("linux/series/README", None),
             ("linux/v1/series.json", None),
             ("linux/v1/b/x86_64/clang", None),
@@ -2476,12 +2535,9 @@ class Layout(unittest.TestCase):
                 self.assertEqual(render.tree_of(path.split("/")), key)
 
 
-def cover_letter(subject: str, date: str | None) -> str:
-    dated = f"Date: {date}\n" if date is not None else ""
-    return f"Subject: {subject}\nFrom: A <a@x>\n{dated}"
-
-
-def add_series(records: Path, name: str, cover: str | None, *lists: str) -> None:
+def add_series(
+    records: Path, name: str, cover: Mapping[str, object] | None, *lists: str
+) -> None:
     """A series name on v1 to lists, built as B, from <name>@x when it has a cover."""
     message_id = f"{name}@x" if cover is not None else ""
     put(records.joinpath("linux", name, B, *MAKE_ALL), record())
@@ -2490,7 +2546,7 @@ def add_series(records: Path, name: str, cover: str | None, *lists: str) -> None
         series_json(commit(name), message_id=message_id, lists=list(lists)),
     )
     if cover is not None:
-        put(records / "linux" / "series" / message_id / "b4" / "mbox.mbx", cover)
+        post(records, message_id, cover)
 
 
 def base_build(records: Path) -> None:
@@ -2511,23 +2567,16 @@ class Index(unittest.TestCase):
         return uncovered((self.output / name).read_text(encoding="utf-8"))
 
     def test_newest_posted_first(self) -> None:
+        add_series(self.records, "old", letter("old", "Mon, 2 Mar 2026 10:00:00 +0000"))
+        add_series(self.records, "new", letter("new", "Tue, 3 Mar 2026 01:00:00 +0200"))
         add_series(
-            self.records, "old", cover_letter("old", "Mon, 2 Mar 2026 10:00:00 +0000")
+            self.records, "zone", letter("zone", "Mon, 2 Mar 2026 12:00:00 -0000")
         )
-        add_series(
-            self.records, "new", cover_letter("new", "Tue, 3 Mar 2026 01:00:00 +0200")
-        )
-        add_series(
-            self.records, "zone", cover_letter("zone", "Mon, 2 Mar 2026 12:00:00 -0000")
-        )
-        add_series(self.records, "bad", cover_letter("bad", "yesterday"))
-        add_series(self.records, "none", cover_letter("none", None))
+        add_series(self.records, "bad", letter("bad", "yesterday"))
+        add_series(self.records, "none", letter("none", None))
         add_series(self.records, "a-bare", None)
         unapplied(self.records, "m@x", "b4/shazam", record("fail"))
-        put(
-            self.records / "linux" / "series" / "m@x" / "b4" / "mbox.mbx",
-            cover_letter("b4", "Mon, 2 Mar 2026 11:00:00 +0000"),
-        )
+        post(self.records, "m@x", letter("b4", "Mon, 2 Mar 2026 11:00:00 +0000"))
         unapplied(self.records, "f@x", "b4/shazam", record("fail"))
         found = re.findall(
             r'<td><a href="\./linux/([^"]+)/index\.html" class="row-link">',
@@ -2541,7 +2590,7 @@ class Index(unittest.TestCase):
     def test_undated_by_recorded(self) -> None:
         earlier = datetime(2026, 1, 1, tzinfo=UTC)
         later = datetime(2026, 1, 2, tzinfo=UTC)
-        cover = render.parse_cover(b"Date: Thu, 1 Jan 2026 00:00:00 +0000\n")
+        cover = render.Cover("", "", "Thu, 1 Jan 2026 00:00:00 +0000", "")
         orders = {
             "dated": render.row_order(cover, None, ("dated",)),
             "a": render.row_order(None, None, ("a",)),
@@ -2563,7 +2612,7 @@ class Index(unittest.TestCase):
     def test_pages(self) -> None:
         for day in range(render.PER_PAGE + 1):
             date = f"1 Jan 2026 00:{day:02}:00 +0000"
-            add_series(self.records, f"s{day:02}", cover_letter(f"s{day:02}", date))
+            add_series(self.records, f"s{day:02}", letter(f"s{day:02}", date))
         first, second = self.index(), self.index("index-2.html")
         self.assertFalse((self.output / "index-3.html").exists())
         names = [f"s{n:02}" for n in range(render.PER_PAGE, -1, -1)]
@@ -2655,7 +2704,7 @@ class Index(unittest.TestCase):
                 shutil.rmtree(self.records / "linux" / "v1" / name)
 
     def test_layout_shared(self) -> None:
-        add_series(self.records, "s", cover_letter("s" * 200, None))
+        add_series(self.records, "s", letter("s" * 200, None))
         render.make_site(self.records, self.output)
         table = re.compile(r'<table class="[^"]*">.*?</thead>', re.DOTALL)
         series, bases = (
@@ -2833,14 +2882,11 @@ class Index(unittest.TestCase):
         put(self.records.joinpath("linux", "v1", B, "sparse", "x.json"), record())
         dates = ("Mon, 2 Mar 2026 10:00:00 +0000", "Fri, 13 Mar 2026 23:30:00 -0200")
         for name, date in (("s1", dates[0]), ("s2", dates[1]), ("s3", None)):
-            add_series(self.records, name, cover_letter(name, date))
+            add_series(self.records, name, letter(name, date))
         for name, data in (("s1", record("fail")), ("s2", record()), ("s3", "{")):
             put(self.records.joinpath("linux", name, B, "sparse", "x.json"), data)
         unapplied(self.records, "m@x", "b4/shazam", record("fail"))
-        put(
-            self.records / "linux" / "series" / "m@x" / "b4" / "mbox.mbx",
-            cover_letter("b4", "Tue, 3 Mar 2026 11:00:00 +0000"),
-        )
+        post(self.records, "m@x", letter("b4", "Tue, 3 Mar 2026 11:00:00 +0000"))
         stats = self.index("stats.html")
         cards = dict(
             re.findall(
@@ -2956,9 +3002,7 @@ class Machines(unittest.TestCase):
         self.output = self.dir / "public"
 
     def series(self, name: str, day: int, host: Mapping[str, object]) -> None:
-        add_series(
-            self.records, name, cover_letter(name, f"{day} Mar 2026 10:00:00 +0000")
-        )
+        add_series(self.records, name, letter(name, f"{day} Mar 2026 10:00:00 +0000"))
         build = self.records.joinpath("linux", name, B)
         for file, seconds in (("make/all.json", 600 * day), ("sparse/x.json", 1)):
             put(build / file, record(seconds=seconds, machine=host))
@@ -3120,14 +3164,6 @@ class BaseLinks(unittest.TestCase):
         )
 
 
-def letter(subject: str, date: str, author: str = "A <a@x>", **extra: str) -> str:
-    lines = [f"Subject: {subject}", f"From: {author}", f"Date: {date}"]
-    lines += [f"{name}: {value}" for name, value in extra.items()]
-    body = f"\nchange-id: {extra['change']}\n" if "change" in extra else "\n"
-    head = "\n".join(line for line in lines if not line.startswith("change:"))
-    return f"From x Mon Sep 17 00:00:00 2001\n{head}\n{body}"
-
-
 class Versions(unittest.TestCase):
     def setUp(self) -> None:
         self.dir = Path(tempfile.mkdtemp())
@@ -3149,11 +3185,6 @@ class Versions(unittest.TestCase):
         self.assertEqual(render.version_of("x v2 y"), (1, False))
         self.assertEqual(render.version_label(1, rfc=True), "RFC")
         self.assertEqual(render.version_label(2, rfc=True), "RFC v2")
-        cover = render.parse_cover(
-            b"Subject: s\nchange-id: not-the-body\n\nhi\nchange-id: 2026-x-1\n"
-        )
-        self.assertEqual(cover.change_id, "2026-x-1")
-        self.assertEqual(render.parse_cover(b"Subject: s\n\nhi\n").change_id, "")
 
     def test_by_change_id(self) -> None:
         change = "20261028-isol-e51694605371"
@@ -3222,10 +3253,10 @@ class Versions(unittest.TestCase):
             ),
         )
         unapplied(self.records, "m@x", "b4/shazam", record("fail"))
-        put(
-            self.records / "linux" / "series" / "m@x" / "b4" / "mbox.mbx",
-            letter("[PATCH v7] nvme-tcp: io_cpu", "Wed, 11 Mar 2026 10:00:00 +0000"),
+        seventh = letter(
+            "[PATCH v7] nvme-tcp: io_cpu", "Wed, 11 Mar 2026 10:00:00 +0000"
         )
+        post(self.records, "m@x", seventh)
         self.render()
         page = self.read("linux", "s6b", "index.html")
         labels = re.findall(r'class="lineage-badge(?: current)?"[^>]*>([^<]+)<', page)
@@ -3253,7 +3284,6 @@ class ListFilter(unittest.TestCase):
             letter(
                 "s",
                 "Mon, 2 Mar 2026 10:00:00 +0000",
-                To="linux-nvme@lists.infradead.org, L <linux-kernel@vger.kernel.org>",
             ),
             "linux-kernel@vger.kernel.org",
             "linux-nvme@lists.infradead.org",
@@ -3262,7 +3292,8 @@ class ListFilter(unittest.TestCase):
             self.records,
             "t",
             letter(
-                "t", "Mon, 2 Mar 2026 11:00:00 +0000", Cc="linux-block@vger.kernel.org"
+                "t",
+                "Mon, 2 Mar 2026 11:00:00 +0000",
             ),
             "linux-block@vger.kernel.org",
         )
@@ -3435,11 +3466,8 @@ class Site(unittest.TestCase):
         )
         put(series / "objects.json", {"schema": 1, "objects": [x], "unbuilt": [x]})
         put(series / "config", x)
-        headers = ("Subject", "From", "Date", "Message-Id", "To", "Cc")
-        put(
-            project / "series" / "m@x" / "b4" / "mbox.mbx",
-            "".join(f"{h}: {x}@y\n" for h in headers),
-        )
+        hostile = letter(x, "Mon, 2 Mar 2026 10:00:00 +0000", x, x, x)
+        post(self.records, "m@x", hostile, project.name)
         put(project / "series" / "m@x" / "b4" / "shazam.json", record(output=x))
         self.make()
         html = self.html()
@@ -3484,7 +3512,7 @@ class Site(unittest.TestCase):
         other.mkdir(parents=True)
         (other / "clang").symlink_to(self.build)
         message = self.dir / "message"
-        put(message / "b4" / "mbox.mbx", "Subject: outside\n")
+        put(message / "series.json", letter("outside", None) | {"message_id": "m@x"})
         put(message / "b4" / "shazam.json", record(output="outside"))
         (self.records / "p" / "series").mkdir()
         (self.records / "p" / "series" / "m@x").symlink_to(message)
@@ -3978,7 +4006,7 @@ class Report(unittest.TestCase):
         records = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, records)
         base_build(records)
-        add_series(records, "v1-1-gabc", cover_letter("[PATCH] x", None))
+        add_series(records, "v1-1-gabc", letter("[PATCH] x", None))
         out = [records.parent / f"{records.name}-{n}" for n in (1, 2)]
         for output in out:
             self.addCleanup(shutil.rmtree, output, ignore_errors=True)
