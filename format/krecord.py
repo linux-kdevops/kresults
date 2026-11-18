@@ -25,6 +25,7 @@ SUBCOMMANDS = {
     "objects": "objects",
     "blktests": "blktests",
     "lore": "lore",
+    "sample": "sample",
 }
 
 

@@ -19,9 +19,7 @@ Exit 0 either way, as krecord run does.
 """
 
 import argparse
-import json
 import re
-import shutil
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -29,7 +27,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from record import (
-    VERSION,
     Json,
     add_build,
     add_producer,
@@ -40,19 +37,17 @@ from record import (
     digest_of,
     exit_of,
     filed_from,
-    find,
     installed,
+    machine_of,
     made_by,
-    memory_of,
     merged,
     need,
     output_of,
     parser_of,
     placed,
     printed_in,
-    run,
-    run_of,
-    tool_of,
+    qemu_of,
+    recorded,
     touch,
     write,
     write_base,
@@ -163,36 +158,10 @@ def date_of(file: Path) -> str:
     return datetime.fromtimestamp(file.stat().st_mtime, UTC).strftime(STAMP)
 
 
-def qemu_of(file: Path) -> Json:
-    """Return the QEMU the machine under test ran on, as an entry names a tool."""
-    path = shutil.which(file.resolve()) or ""
-    need(path, f"{file} is no program")
-    printed = run(path, "--version").partition("\n")[0]
-    need(printed, f"{file} prints no version")
-    # QEMU prints its version, then in brackets its package or the describe
-    # name of its source, which holds a version of its own.
-    tool = tool_of("qemu", path, re.sub(r"[()]", " ", printed))
-    return {**tool, "version": find(f"({VERSION.pattern})", printed)}
-
-
 def fields_of(file: Path) -> dict[str, str]:
     """Return a result file's fields: each line is a key, a tab and a value."""
     lines = file.read_text("utf-8", errors="replace").splitlines()
     return {key: value for key, _, value in (line.partition("\t") for line in lines)}
-
-
-def machine_of(facts: Path) -> Json:
-    """Return the machine under test, as an invocation names one."""
-    cpuinfo = (facts / "cpuinfo").read_text("utf-8", errors="replace")
-    machine: Json = {
-        "arch": (facts / "arch").read_text("utf-8").strip(),
-        "cpu": find(r"^model name\s*:\s*(.+)$", cpuinfo),
-        "cpus": len(re.findall(r"^processor\s*:", cpuinfo, re.MULTILINE)),
-        "memory": memory_of(facts / "meminfo"),
-    }
-    for fact, value in machine.items():
-        need(value, f"{facts} names no {fact} of the machine under test")
-    return machine
 
 
 def started_of(file: Path, date: str) -> str:
@@ -230,27 +199,6 @@ def entry_of(result: Result, ran: Json, top: str, reason: Sequence[str]) -> Json
     started = started_of(file, fields.get("date", ""))
     entry["invocations"] = [{"started": started, "seconds": seconds}]
     return entry
-
-
-def recorded(filed: Path, subject: Json, entry: Json) -> bool:
-    """Return whether a record holds a run already, from results read before.
-
-    Its invocation is then in the entry the run equals, with the same
-    producer, run and start.
-    """
-    if not filed.is_file():
-        return False
-
-    def named(invocation: Json) -> tuple[str, str, str]:
-        return invocation["producer"]["name"], invocation["run"], invocation["started"]
-
-    record: Json = json.loads(filed.read_bytes())
-    return record["subject"] == subject and any(
-        named(invocation) == named(entry["invocations"][0])
-        for known in record["entries"]
-        if run_of(known) == run_of(entry)
-        for invocation in known["invocations"]
-    )
 
 
 def file_results(args: argparse.Namespace) -> None:

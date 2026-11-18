@@ -33,8 +33,8 @@ Name your :term:`lab <Lab>` once, in lowercase letters, digits and ``-``:
    $ git config --global kresults.origin my-lab
 
 ``krecord`` writes each kind of file by a subcommand: ``run``, ``series``,
-``objects``, ``blktests`` and ``lore``. Options with no subcommand are
-``run``'s.
+``objects``, ``blktests``, ``lore`` and ``sample``. Options with no
+subcommand are ``run``'s.
 
 ``krecord`` files a :term:`record <Record>` of one run of a command. Run
 the command as a transient `systemd`_ user unit, in the tree, and name
@@ -173,6 +173,46 @@ read. Without it lorefetch is the one on ``PATH``, named by its store path
 or its package. A series filed already is left as it is until its thread
 holds more mails.
 
+``krecord sample`` files one run that a machine under test made earlier,
+as a benchmark's is. Run it at the top of the tree of the kernel that
+ran, with the build as ``krecord run`` takes it and what ``krecord run``
+reads of its unit given by options. One run of `fio`_ on a guest:
+
+.. code-block:: console
+
+   $ krecord sample --command 'fio atomic-merge.fio' \
+       --output fio/nvme0n1/atomic-merge.json \
+       --exit 0 --started 2026-11-18T12:00:00Z --seconds 60 \
+       --machine results/machine --install results/machine \
+       --qemu ~/.local/bin/qemu-system-x86_64 \
+       --metrics results/atomic-merge.metrics --job atomic-merge.fio \
+       --output-file results/atomic-merge.stderr \
+       --config build/.config --configuration defconfig \
+       --producer NAME --producer-version 1 --run 1042
+
+``--machine`` names the directory with the facts of the machine under
+test, ``arch``, ``cpuinfo`` and ``meminfo``, and ``--install`` the one
+with the ``version`` and the ``url`` of the command's tool, both as
+``krecord blktests`` reads them from ``machine/``. ``--started`` is in
+UTC. ``--output``, ``--output-file`` and ``--env`` are ``krecord run``'s,
+and ``--qemu`` is ``krecord blktests``'s.
+
+``--metrics`` names a file of the numbers the run measured, one a line:
+the name, the value, the unit and ``higher`` or ``lower``, the way the
+value improves, with a tab between them. A count has an empty unit:
+
+.. code-block:: text
+   :caption: results/atomic-merge.metrics
+
+   iops	12000	1/s	higher
+   write_merges	3		higher
+   clat_p99	850000	ns	lower
+
+``--job`` names the job file the command ran, which the entry names by
+its hash. Each further run is one more invocation of the same entry, and
+a run filed already, by its producer, run and start, adds nothing. A
+line of the file that is not as above leaves no record, with the reason.
+
 Checking records
 ================
 
@@ -255,6 +295,7 @@ Another records tree takes a drop-in on each of the two render units, for
 one failed.
 
 .. _blktests: https://github.com/linux-blktests/blktests
+.. _fio: https://github.com/axboe/fio
 .. _Git: https://git-scm.com
 .. _inotify: https://man7.org/linux/man-pages/man7/inotify.7.html
 .. _jsonschema: https://python-jsonschema.readthedocs.io/

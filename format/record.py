@@ -370,6 +370,16 @@ def record_of(command: str, project: str) -> str:
     return names[0]
 
 
+def env_of(args: argparse.Namespace, first: str) -> dict[str, str]:
+    """Return the variables an entry records, each as set and not empty.
+
+    They are those commands.json lists for the command's first tool, then
+    --env's.
+    """
+    names = dict.fromkeys([*listed(args.project)["env"].get(first, []), *args.env])
+    return {name: os.environ[name] for name in names if os.environ.get(name)}
+
+
 def ran(args: argparse.Namespace, command: str, top: str) -> Json:
     """Return what an entry says ran: the tools, the command and its environment.
 
@@ -380,8 +390,7 @@ def ran(args: argparse.Namespace, command: str, top: str) -> Json:
     word = command.partition(" ")[0]
     first = Path(word).name
     need(first, "the command is empty")
-    names = dict.fromkeys([*listed(args.project)["env"].get(first, []), *args.env])
-    env = {name: os.environ[name] for name in names if os.environ.get(name)}
+    env = env_of(args, first)
     # A tool of the tree is not run for its version: QEMU's configure empties
     # its build directory before it reads an option.
     own = first if not word.startswith("/") and Path(top, word).is_file() else ""
@@ -523,6 +532,34 @@ def machine() -> Json:
     }
 
 
+def machine_of(facts: Path) -> Json:
+    """Return the machine under test, as an invocation names one."""
+    for fact in ("arch", "cpuinfo", "meminfo"):
+        need((facts / fact).is_file(), f"{facts / fact} does not exist")
+    cpuinfo = (facts / "cpuinfo").read_text("utf-8", errors="replace")
+    found: Json = {
+        "arch": (facts / "arch").read_text("utf-8").strip(),
+        "cpu": find(r"^model name\s*:\s*(.+)$", cpuinfo),
+        "cpus": len(re.findall(r"^processor\s*:", cpuinfo, re.MULTILINE)),
+        "memory": memory_of(facts / "meminfo"),
+    }
+    for fact, value in found.items():
+        need(value, f"{facts} names no {fact} of the machine under test")
+    return found
+
+
+def qemu_of(file: Path) -> Json:
+    """Return the QEMU the machine under test ran on, as an entry names a tool."""
+    path = shutil.which(file.resolve()) or ""
+    need(path, f"{file} is no program")
+    printed = run(path, "--version").partition("\n")[0]
+    need(printed, f"{file} prints no version")
+    # QEMU prints its version, then in brackets its package or the describe
+    # name of its source, which holds a version of its own.
+    found = tool_of("qemu", path, re.sub(r"[()]", " ", printed))
+    return {**found, "version": find(f"({VERSION.pattern})", printed)}
+
+
 def invocation(who: Json, started: int) -> Json:
     """Return who ran the command, when and where, and what it used."""
     at = datetime.fromtimestamp(started, UTC)
@@ -572,6 +609,27 @@ def merged(path: Path, subject: Json, entry: Json) -> Json:
     return record
 
 
+def recorded(filed: Path, subject: Json, entry: Json) -> bool:
+    """Return whether a record holds a run already, from results read before.
+
+    Its invocation is then in the entry the run equals, with the same
+    producer, run and start.
+    """
+    if not filed.is_file():
+        return False
+
+    def named(invocation: Json) -> tuple[str, str, str]:
+        return invocation["producer"]["name"], invocation["run"], invocation["started"]
+
+    record: Json = json.loads(filed.read_bytes())
+    return record["subject"] == subject and any(
+        named(invocation) == named(entry["invocations"][0])
+        for known in record["entries"]
+        if run_of(known) == run_of(entry)
+        for invocation in known["invocations"]
+    )
+
+
 def write_base(directory: Path, commit: str, name: str) -> None:
     """Write the series.json of a commit's directory that holds none.
 
@@ -614,7 +672,7 @@ def build_under(directory: Path, build: Json) -> Path:
 
 
 def digest_of(settings: bytes) -> str:
-    """Return the hash an entry names its .config by."""
+    """Return the hash an entry names a file by: its .config, or its job."""
     return "sha256:" + hashlib.sha256(settings).hexdigest()
 
 
