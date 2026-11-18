@@ -28,7 +28,7 @@ import tempfile
 import textwrap
 from collections import Counter
 from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from difflib import SequenceMatcher
 from email import policy
@@ -621,6 +621,14 @@ class Tool:
     name: str
     version: str
     build: str
+    # Where the source its build names can be read, or "". Two entries that
+    # differ in it alone ran the same.
+    url: str = field(default="", compare=False)
+
+    @property
+    def named(self) -> str:
+        """Its name, then the version it prints when it prints one."""
+        return f"{self.name} {self.version}".rstrip()
 
 
 @dataclass(frozen=True, slots=True, order=True)
@@ -1021,6 +1029,7 @@ def parse_tool(data: object) -> Tool:
         name=want(fields, "name", str, "a string"),
         version=want(fields, "version", str, "a string"),
         build=want(fields, "build", str, "a string"),
+        url=optional(fields, "url", str, "a string") or "",
     )
 
 
@@ -4266,8 +4275,8 @@ def unapplied_page(item: Unapplied, marks: Marks, site: Site) -> str:
         items.append(("Producer", producer_html(record.producer)))
     if isinstance(record, Record):
         whole = url("", *output_file(item.key))
-        shown = f'<p class="step muted mono">$ {escape(record.command_line)}</p>'
-        shown += invocation_html(record) + output_html(record, whole)
+        shown = command_html(record) + invocation_html(record)
+        shown += output_html(record, whole)
     else:
         shown = f'<p class="note">{mono(f"{record.path}: {record.reason}")}</p>'
     tool = item.applier.value
@@ -4718,6 +4727,23 @@ def entry_head(key: str, entry: Entry | None, comparison: Comparison | None) -> 
     return "".join(head)
 
 
+def tool_html(tool: Tool) -> str:
+    """A tool as named, then its build, a link where its url is one of the web."""
+    build = escape(tool.build)
+    if href := web_link(tool.url):
+        build = f'<a href="{escape(href)}">{build}</a>'
+    return f"{escape(tool.named)} ({build})"
+
+
+def command_html(record: Record) -> str:
+    """A record's command as a developer types it, and under it its tools."""
+    tools = ", ".join(map(tool_html, record.tools))
+    return (
+        f'<p class="step muted mono">$ {escape(record.command_line)}</p>'
+        f'<p class="note text-muted-sm">With {tools}</p>'
+    )
+
+
 def invocation_html(record: Record) -> str:
     """A record's latest run: its name, lab, start, time and machine, and what it took.
 
@@ -4740,8 +4766,7 @@ def entry_html(
     entry = page.tree.records.get(key)
     comparison = page.comparisons.get(key)
     if isinstance(entry, Record):
-        body = f'<p class="step muted mono">$ {escape(entry.command_line)}</p>'
-        body += invocation_html(entry)
+        body = command_html(entry) + invocation_html(entry)
         whole = url("", *output_file(key))
         base = base_href(page, key, root, base_ids)
         cited = cites(page.tree, page.series)
@@ -5049,12 +5074,15 @@ def report_head(
 ) -> list[str]:
     """Whose a section is, how it stands, where, and the commands to rerun it.
 
-    fetch puts the build's .config in place first.
+    fetch puts the build's .config in place first. Its tools follow, each
+    as named and with its build.
     """
     comparison = page.comparisons[key]
     head = [RULE, prose(f"{key}, {page.tree.named}")]
     head += [prose(", ".join([comparison.label, *comparison.notes]))]
-    return [*head, *filter(None, [link]), *fetch, "$ " + verbatim(record.command_line)]
+    head += [*filter(None, [link]), *fetch, "$ " + verbatim(record.command_line)]
+    tools = ", ".join(f"{tool.named} ({tool.build})" for tool in record.tools)
+    return [*head, prose(f"With {tools}")]
 
 
 def report_sections(page: Page, address: str | None, seen: dict[str, str]) -> list[str]:

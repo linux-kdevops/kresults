@@ -89,6 +89,13 @@ About is Octicons', under MIT.
   links its thread as well; no thread holds the letter of a series not
   yet sent. Without a letter there, the page shows the headers of the
   mbox under the Message-ID.
+- An entry names its tools on one line under its command, on a page and
+  in the report: each by name, the version it prints, and its build in
+  parentheses, a link on a page where the tool has a `url`. A series'
+  entry alone has the line, as it alone has the command. Without it
+  "ran differently" points at tools no page names. A `url` is no part
+  of what an entry ran, so an entry with one still matches a base's
+  without.
 - A series' output and its base's open in place, by checkboxes that the
   stylesheet reads. Reading either used to mean leaving the diff.
 - The index lists each series once, newest first by the cover letter's

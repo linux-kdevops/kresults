@@ -51,6 +51,8 @@ SUBJECT = frozenset({"file", "test", "range", "commit", "build"})
 BUILT = {"configuration": ["b"], "arch": "x86_64", "compiler": "clang"}
 # Where the site links a revision of the producer in PRODUCER.
 COMMITS = "https://github.com/linux-kdevops/kdevops-ng/commit/"
+# What a report says of CLANG, under the command.
+WITH = "With clang 21.1.8 (/nix/store/x-clang-21.1.8)"
 
 
 def kdevops_ng(version: str) -> dict[str, str]:
@@ -485,6 +487,11 @@ class BaseMatching(unittest.TestCase):
                 )
         same = ran(entry("pass", env={"LLVM": "1", "ARCH": "x86_64"}))
         self.assertEqual(self.compare(parsed("fail"), same).notes, [])
+
+    def test_url_alone_runs_the_same(self) -> None:
+        runs = ran(entry("pass", tools=[{**CLANG, "url": "https://e.org/clang"}]))
+        self.assertEqual(runs[0].tools[0].url, "https://e.org/clang")
+        self.assertEqual(self.compare(parsed("fail"), runs).notes, [])
 
     def test_shown(self) -> None:
         runs = ran(entry("pass", command="make -s W=1"))
@@ -1640,6 +1647,24 @@ class Links(unittest.TestCase):
             render.producer_html(render.Producer("<x>", "4.2")),
             '<span class="mono">&lt;x&gt;</span> <span class="mono">4.2</span>',
         )
+
+    def test_tools(self) -> None:
+        blktests = {"name": "blktests", "version": "", "build": "79c32fb31b7b"}
+        tools = [{**blktests, "url": "https://e.org/c?a=1&b=2"}, CLANG]
+        self.assertEqual(
+            render.command_html(render.parse_record(record(tools=tools))),
+            '<p class="step muted mono">$ ARCH=x86_64 LLVM=1 make -s</p>'
+            '<p class="note text-muted-sm">With blktests (<a href='
+            '"https://e.org/c?a=1&amp;b=2">79c32fb31b7b</a>),'
+            " clang 21.1.8 (/nix/store/x-clang-21.1.8)</p>",
+        )
+        unsafe = {"name": "<x>", "version": "<v>", "build": "<b>"}
+        for url in ("javascript:alert(1)", "data:text/html,x", " https://e.org"):
+            with self.subTest(url=url):
+                tools = [{**unsafe, "url": url}]
+                shown = render.command_html(render.parse_record(record(tools=tools)))
+                self.assertIn("With &lt;x&gt; &lt;v&gt; (&lt;b&gt;)</p>", shown)
+                self.assertNotIn("href", shown)
 
 
 def linux(commit: str) -> render.Tree:
@@ -3681,7 +3706,7 @@ class Report(unittest.TestCase):
         self.assertIn("\nnew\n", text)
         self.assertNotIn("\nold\n", text)
         self.assertIn("\nsparse/x, b1\nintroduced, +1 -0\n", text)
-        self.assertIn("\n$ ARCH=x86_64 LLVM=1 make -s\n\nnew\n", text)
+        self.assertIn(f"\n$ ARCH=x86_64 LLVM=1 make -s\n{WITH}\n\nnew\n", text)
         both = render.compare_records(parsed("fail", "a\nb\n"), parsed("fail", "c\n"))
         self.assertTrue(render.prose(both.label).isascii())
         self.assertIn("  b1: 1 introduced\n", text)
@@ -3780,9 +3805,10 @@ class Report(unittest.TestCase):
         make = "make -s C=2 " + "x" * 1000
         text = mailed("w\n", command=make)
         line = render.verbatim(f"ARCH=x86_64 LLVM=1 {make}")
-        self.assertIn(f"\nintroduced, +1 -0, ran differently\n$ {line}\n\nw\n", text)
+        self.assertIn(f"\nintroduced, +1 -0, ran differently\n$ {line}\n{WITH}", text)
         same = mailed("w\n")
-        self.assertIn("\nintroduced, +1 -0\n$ ARCH=x86_64 LLVM=1 make -s\n\nw\n", same)
+        made = f"\nintroduced, +1 -0\n$ ARCH=x86_64 LLVM=1 make -s\n{WITH}\n\nw\n"
+        self.assertIn(made, same)
 
     def test_config_fetched_once_per_build(self) -> None:
         outputs = {"sparse/x": "a\n", "sparse/y": "b\n", "sparse/z": "c\n"}
@@ -4035,7 +4061,8 @@ class Format(unittest.TestCase):
     def test_resources_on_a_page(self) -> None:
         build = self.page("linux", self.DIRTY, self.HOST, "index.html")
         self.assertIn(
-            '<p class="step muted mono">$ make</p><p class="note text-muted-sm">Run'
+            '<p class="step muted mono">$ make</p><p class="note text-muted-sm">With'
+            ' tool 1.0 (v1.0)</p><p class="note text-muted-sm">Run'
             ' <span class="mono">run-1</span> at <span class="mono">lab-a</span>,'
             " started 2026-01-02T03:04:05Z, 3 s on Example, 4 CPUs, 8 GiB"
             f"<br>{TOOK}</p>",
