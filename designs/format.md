@@ -117,6 +117,19 @@ the version (`format/CHANGES.md`).
   The entry still says what ran. Its command names the query and no
   maildir, which only places files, so `krecord lore` is given the query: the
   maildir keeps none.
+- A benchmark's numbers are `metrics` of an invocation, and take no part
+  in whether two runs are equal. No two runs measure the same number, so
+  as a part of the entry, or of its output, each run would be an entry
+  and none would have a second sample. The entry's invocations are the
+  samples, and nothing stores their spread: a figure kept beside them
+  could disagree with them. The producer extracts the numbers, since a
+  format that read fio's output would follow each tool's own.
+- A benchmark's verdict is whether it ran to the end. A threshold on a
+  number is a choice of whoever reads it, and differs by machine.
+- An entry names its job file by hash, as `job`, the way it names its
+  `.config`. The file's name is in the command and its content is not:
+  the numbers of two jobs under one name must not be read as samples of
+  one.
 - A record's name may name the compiler, filled from the `.config`.
   `W=1e` keeps the runs of two compilers apart, and a producer that
   named neither would write its line once per compiler.

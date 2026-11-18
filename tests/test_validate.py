@@ -389,6 +389,14 @@ class Validate(unittest.TestCase):
         entries[1]["invocations"][0]["origin"] = "lab-b"
         self.assertEqual(problems(files), SAME_RUN)
 
+    def test_same_run_with_other_metrics(self) -> None:
+        files = good()
+        entries = at(files, SPARSE)["entries"]
+        entries.append({**entries[0], "invocations": [invocation()]})
+        metric = {"name": "iops", "value": 12000.5, "unit": "1/s", "better": "higher"}
+        entries[1]["invocations"][0]["metrics"] = [metric]
+        self.assertEqual(problems(files), SAME_RUN)
+
     def test_same_run_in_other_order(self) -> None:
         found = outputs("a.c:1: x\nb.c:2: y\n", "b.c:2: y\na.c:1: x\n")
         self.assertEqual(found, SAME_RUN)
@@ -421,6 +429,7 @@ class Validate(unittest.TestCase):
             "command": "make -s C=2 CF=-Wsparse-error init/main.o",
             "env": {**CLANG, "KCFLAGS": "-O3"},
             "config": OTHER_CONFIG,
+            "job": CONFIG,
             "status": "error",
             "exit": 2,
         }
@@ -728,6 +737,34 @@ class Validate(unittest.TestCase):
         files = good()
         del first_entry(files, TEST)["invocations"][0]["run"]
         self.assert_problem(files, TEST, "'run' is a required property")
+
+    def test_metrics(self) -> None:
+        files = good()
+        count = {"name": "write_merges", "value": 3, "unit": "", "better": "higher"}
+        first_entry(files, TEST)["invocations"][0]["metrics"] = [count]
+        self.assertEqual(problems(files), [])
+        for field, value, problem in (
+            ("name", "", "should be non-empty"),
+            ("value", "3", "is not of type 'number'"),
+            ("unit", None, "is not of type 'string'"),
+            ("better", "more", "is not one of ['higher', 'lower']"),
+            ("spread", 0.1, "'spread' was unexpected"),
+        ):
+            with self.subTest(field=field):
+                first_entry(files, TEST)["invocations"][0]["metrics"] = [
+                    {**count, field: value}
+                ]
+                self.assert_problem(files, TEST, problem)
+        del count["better"]
+        first_entry(files, TEST)["invocations"][0]["metrics"] = [count]
+        self.assert_problem(files, TEST, "'better' is a required property")
+
+    def test_job(self) -> None:
+        files = good()
+        first_entry(files, TEST)["job"] = CONFIG
+        self.assertEqual(problems(files), [])
+        first_entry(files, TEST)["job"] = "atomic-merge.fio"
+        self.assert_problem(files, TEST, "does not match")
 
     def test_subject_field(self) -> None:
         files = good()

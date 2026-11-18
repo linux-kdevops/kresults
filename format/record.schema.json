@@ -161,6 +161,11 @@
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
+        "job": {
+          "description": "sha256: and the SHA-256 of the job file a benchmark ran; absent for a command that takes none",
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
         "status": {
           "description": "pass: the code passed; fail: the code failed; skip: a test that did not run, its reason as output; error: the tool did not finish for a cause outside the code",
           "enum": [
@@ -390,6 +395,14 @@
             }
           }
         },
+        "metrics": {
+          "description": "The numbers the run measured, each name once; they take no part in whether two runs are equal",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/metric"
+          }
+        },
         "machine": {
           "description": "The machine the command ran on; never its name",
           "type": "object",
@@ -422,6 +435,38 @@
               "minimum": 1
             }
           }
+        }
+      }
+    },
+    "metric": {
+      "description": "One number a run measured",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "value",
+        "unit",
+        "better"
+      ],
+      "properties": {
+        "name": {
+          "description": "What was measured, as the producer names it",
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": "number"
+        },
+        "unit": {
+          "description": "The unit of the value, such as ns or 1/s; empty for a count",
+          "type": "string"
+        },
+        "better": {
+          "description": "Which way the value improves",
+          "enum": [
+            "higher",
+            "lower"
+          ]
         }
       }
     },

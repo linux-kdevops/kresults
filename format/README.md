@@ -13,8 +13,8 @@ define each field.
 A record is what tools reported on one subject: a commit of a project,
 a file, object or test in it, or a series by its Message-ID. It holds
 one entry per distinct run. An entry is the tools with their
-versions and builds, the command, its environment and `.config`, and
-what the run reported: the verdict, the exit status and the output. A
+versions and builds, the command, its environment, `.config` and job
+file, and what the run reported: the verdict, the exit status and the output. A
 run equal to an entry in all of these is added to its `invocations`,
 and any difference makes a new entry. Two entries that differ only in
 what they reported are a flaky test or tool.
@@ -148,6 +148,11 @@ such as copying a defconfig or editing it with `scripts/config`, prints
 nothing and leaves no record: the `.config` it made is the `config` of
 the command that runs next.
 
+`job` is `sha256:` and the SHA-256 of the job file a benchmark ran, as
+`fio` takes one, absent for a command that takes none. A job changed
+under the same name measures something else, so its runs are another
+entry.
+
 ## Verdicts
 
 - `pass`: the command exited 0, or the test passed.
@@ -170,6 +175,9 @@ it did not run is one `skip`, of the group: its command is `check
 block`, and it started when `check` last wrote that output. A run stopped
 on purpose, as when its producer cancels it, leaves nothing.
 
+A benchmark's verdict says whether it ran to the end, and never whether
+its numbers are good: they are the `metrics` of its invocations (below).
+
 ## Output
 
 `output` holds the errors and warnings the tool printed: what it wrote
@@ -178,7 +186,8 @@ there, such as `checkpatch.pl`. For a test it is what the suite
 reported of it: its failure, standard error and kernel log, or why it
 skipped. Nothing parses it, so a run keeps progress out with the tool's
 own options, as `make -s` does. `output` is absent when the tool printed
-nothing.
+nothing. A benchmark's output is its errors alone: a number there would
+make each run an entry of its own.
 
 Two outputs are the same when they hold the same lines, each as many
 times, in any order, once every line has lost what moves from one run to
@@ -226,6 +235,21 @@ out:
   controller is delegated to the user's service manager;
 - `tasks`: the `peak` number of processes and threads.
 
+An invocation of a benchmark may carry `metrics`, the numbers that run
+measured, each with:
+
+- `name`: what was measured, as the producer names it, once in an
+  invocation: `iops`, `clat_p99`;
+- `value`: the number;
+- `unit`: its unit, `ns` or `1/s`, and empty for a count;
+- `better`: `higher` or `lower`, the way the value improves.
+
+The producer takes them from what the tool wrote; the format parses no
+tool's output. Like `seconds` and `resources`, they take no part in
+whether two runs are equal, so each further run of a benchmark is one
+more invocation of its entry and the entry holds the samples. Nothing
+else keeps how they spread: a reader computes what it shows from them.
+
 `krecord` reads them as the command exits, from `cpu.stat`, the three
 `pressure` files, `memory.peak`, `memory.swap.peak`, `memory.events`,
 `memory.stat`, `pids.peak` and `io.stat`. Its own run is in the figures,
@@ -257,7 +281,8 @@ linux/                                   the project
 │   │   └── sparse/init/main.o.json      make C=2 init/main.o
 │   ├── block-layer/nvm-express-driver/x86_64/clang/
 │   │   ├── make/all.json
-│   │   └── blktests/nvme0n1/block/003.json
+│   │   ├── blktests/nvme0n1/block/003.json
+│   │   └── fio/nvme0n1/atomic-merge.json
 │   └── fstests/xfs-filesystem/x86_64/clang/
 │       └── fstests/xfs_bs4k_ss512/generic/001.json
 └── <message-id>/                        a series
@@ -336,7 +361,10 @@ qemu/                                    another project
     `blktests/nodev/loop/001.json` for a test that makes its own device.
     blktests names the directory, and adds the condition a test ran
     under: `blktests/nvme0n1_tr_loop/nvme/035.json`. A group that did not
-    run is named alone, `blktests/nvme0n1/block.json`.
+    run is named alone, `blktests/nvme0n1/block.json`;
+  - a benchmark by its tool, then the device it ran on and its job
+    file's name without the suffix: `fio/nvme0n1/atomic-merge.json` for
+    `fio atomic-merge.fio`.
 
   The same tool run with other flags is another entry of the same
   record, as `checkpatch.pl` is with and without `--strict`.
