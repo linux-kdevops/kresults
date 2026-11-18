@@ -146,6 +146,12 @@ About is Octicons', under MIT.
 - A recipient is a mailing list when its series' `series.json` lists
   it. Taking every address without a display name listed maintainers as
   lists (`designs/format.md`).
+- A series no commit came from has its row and its page, with how far
+  it got where an applied one has its findings: `fetched` where its only
+  record is the fetch, `cannot apply` where the tool that applies
+  refused it. A producer that watches a mailing list files more series
+  than it builds, and a row was the only way to learn that one waits.
+  Its page's Thread is the Message-ID a task takes.
 - A whole row is a link. Safari positions no table row, so the link's
   box is each cell and not the row.
 - The series table has a fixed layout with one set of column widths. A

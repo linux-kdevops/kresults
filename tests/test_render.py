@@ -1123,11 +1123,55 @@ class NotApplied(unittest.TestCase):
                     ("linux", MESSAGE_ID),
                 ),
                 (render.Applier.B4, MBOX_ID, "b4/shazam", ("linux", MBOX_ID)),
+                (render.Applier.B4, "fetched@x", "b4/mbox", ("linux", "fetched@x")),
                 (render.Applier.B4, "lost@x", "b4/mbox", ("linux", "lost@x")),
             ],
         )
+        self.assertEqual([item.fetched for item in found], [False, False, True, False])
         self.assertIsInstance(found[0].cover, render.Cover)
         self.assertIsNone(found[1].cover)
+
+    def test_each_state_of_a_series(self) -> None:
+        """Fetched only, could not apply, and built, each on its row."""
+        name = "20261105-nvme-v1-0-1@example.org"
+        tool = {"name": "lorefetch", "version": "", "build": "v0.3-4-g0123456789ab"}
+        fetched = record(command="lorefetch --query s:PATCH", env={}, tools=[tool])
+        unapplied(self.records, name, "b4/mbox", fetched)
+        put(
+            self.records / "linux" / name / "b4" / "mbox.mbx",
+            f"From mboxrd@z Thu Jan  1 00:00:00 1970\nMessage-Id: <{name}>\n"
+            + cover_letter(
+                "[PATCH 0/2] nvme: <b>wide</b>", "Thu, 05 Nov 2026 10:00:00 +0000"
+            )
+            + "\nRe: text\n",
+        )
+        add_series(self.records, "v1-1-gbuilt", "[PATCH] built")
+        index = self.page()
+        rows = re.findall(r"<tr data-search.*?</tr>", index, re.DOTALL)
+        states = {
+            "nvme: &lt;b&gt;wide&lt;/b&gt;</a>": '<span class="badge none">fetched<',
+            "Support for wide discards</a>": '<span class="badge fail">cannot apply<',
+            ">v1-1-gbuilt</a>": '<span class="suite">make <span class="pass"',
+        }
+        for title, state in states.items():
+            (row,) = (row for row in rows if title in row)
+            self.assertIn(state, row.rpartition("<td>")[2])
+        self.assertIn(' data-week="2026-W45" data-outcome="fetched"', index)
+        page = self.page("linux", name)
+        self.assertIn("<h1>[PATCH 0/2] nvme: &lt;b&gt;wide&lt;/b&gt;</h1>", page)
+        self.assertIn("The series was fetched. Nothing applied it yet.", page)
+        self.assertNotIn("could not apply", page)
+        self.assertIn("<dt>Author</dt><dd>A &lt;a@x&gt;</dd>", page)
+        self.assertIn("<dt>Date</dt><dd>Thu, 05 Nov 2026 10:00:00 +0000</dd>", page)
+        thread = (
+            f'<a href="https://lore.kernel.org/all/{name}/" class="mono">{name}</a>'
+        )
+        self.assertIn(f"<dt>Thread</dt><dd>{thread}</dd>", page)
+        self.assertIn("$ lorefetch --query s:PATCH", page)
+        self.assertIn("With lorefetch (v0.3-4-g0123456789ab)", page)
+        stats = (self.output / "stats.html").read_text(encoding="utf-8")
+        for card, count in (("Could not apply", 2), ("Fetched only", 1)):
+            self.assertIn(f'<h3>{card}</h3><div class="value">{count}<', stats)
 
     def test_applied(self) -> None:
         unapplied(
@@ -2795,6 +2839,7 @@ class Index(unittest.TestCase):
                 "Series": "4",
                 "Applied": "3",
                 "Could not apply": "1",
+                "Fetched only": "0",
                 "Bases": "1",
                 "Builds": "4",
                 "Records": "9",

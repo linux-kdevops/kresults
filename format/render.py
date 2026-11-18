@@ -374,7 +374,7 @@ svg.chart .marks:hover a.mark:not(:hover) { opacity: .35; }
 .s1 { fill: var(--series-1); } .s2 { fill: var(--series-2); }
 .s3 { fill: var(--series-3); }
 .o-introduced { fill: var(--status-failed); } .o-clean { fill: var(--status-reviewed); }
-.o-unapplied { fill: var(--text-dim); }
+.o-unapplied { fill: var(--text-dim); } .o-fetched { fill: var(--border); }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 8px;
   padding: 0; list-style: none; color: var(--text-muted); font-size: .9em; }
 .legend svg { width: 10px; height: 10px; margin-right: 6px; vertical-align: -1px; }
@@ -930,11 +930,13 @@ class Applier(Enum):
     B4 = "b4"
 
 
-# The record of applying a series, under its Message-ID; without one, the
-# record of fetching it, which did not get as far (commands.json).
+# The record of fetching a series, under its Message-ID (commands.json).
+FETCH = "b4/mbox"
+# The record of applying a series; without one, that of fetching it, which
+# did not get as far.
 APPLIERS = (
     (Applier.B4, "b4/shazam"),
-    (Applier.B4, "b4/mbox"),
+    (Applier.B4, FETCH),
 )
 # The message b4 saved of a series, under its Message-ID.
 MBOX = "b4/mbox.mbx"
@@ -945,7 +947,7 @@ OBJECTS = "objects"
 
 @dataclass(frozen=True, slots=True)
 class Unapplied:
-    """A series that did not apply, by its Message-ID, and its last record."""
+    """A series no commit came from, by its Message-ID, and its last record."""
 
     project: str
     applier: Applier
@@ -959,6 +961,13 @@ class Unapplied:
     @property
     def parts(self) -> tuple[str, ...]:
         return (self.project, self.name)
+
+    @property
+    def fetched(self) -> bool:
+        """Whether it was fetched and nothing tried to apply it."""
+        record = self.record
+        passed = isinstance(record, Record) and record.status is Status.PASSED
+        return self.key == FETCH and passed
 
 
 def bare_id(message_id: str) -> str:
@@ -1570,10 +1579,9 @@ def load_unapplied(
     history: Mapping[tuple[str, ...], Recorded],
     trees: Iterable[Tree] = (),
 ) -> list[Unapplied]:
-    """Each series by its Message-ID that did not apply.
+    """Each series by its Message-ID that no commit of trees came from.
 
-    No commit of trees came from it, and its last record, of APPLIERS, did
-    not pass.
+    Its last record, of APPLIERS, did not pass, or is of fetching it alone.
     """
     named = {
         (tree.project, series.message_id)
@@ -1590,7 +1598,8 @@ def load_unapplied(
                 if file is None or not regular(file):
                     continue
                 entry = load_entry(records, file)
-                if isinstance(entry, Unreadable) or entry.status is not Status.PASSED:
+                applied = isinstance(entry, Record) and entry.status is Status.PASSED
+                if key == FETCH or not applied:
                     cover = load_cover(records, inside(directory, MBOX))
                     recorded = history.get((project.name, directory.name))
                     found.append(
@@ -2754,6 +2763,7 @@ class Outcome(Enum):
     INTRODUCED = "introduced"
     CLEAN = "clean"
     UNAPPLIED = "unapplied"
+    FETCHED = "fetched"
 
     @property
     def label(self) -> str:
@@ -2764,6 +2774,7 @@ OUTCOME_LABELS = {
     Outcome.INTRODUCED: "Introduced something",
     Outcome.CLEAN: "Nothing introduced",
     Outcome.UNAPPLIED: "Could not apply",
+    Outcome.FETCHED: "Fetched only",
 }
 
 
@@ -2814,7 +2825,7 @@ def unapplied_facts(item: Unapplied) -> Facts:
         unapplied_title(item),
         url("", *item.parts, "index.html"),
         week_of(item.cover),
-        Outcome.UNAPPLIED,
+        Outcome.FETCHED if item.fetched else Outcome.UNAPPLIED,
     )
 
 
@@ -2904,8 +2915,11 @@ def unapplied_title(item: Unapplied) -> str:
     return item.name
 
 
-def applied_html(entry: Entry) -> str:
-    """Its finding: cannot apply when the record failed, else its own."""
+def applied_html(item: Unapplied) -> str:
+    """Its finding: fetched, cannot apply when the record failed, else its own."""
+    entry = item.record
+    if item.fetched:
+        return badge("none", "fetched")
     if isinstance(entry, Unreadable):
         return badge(Change.UNREADABLE.kind, Change.UNREADABLE.value)
     if entry.status is Status.FAILED:
@@ -2930,7 +2944,7 @@ def unapplied_row(item: Unapplied, marks: Marks) -> str:
         f'<div class="lists">{lists_html(cover, ())}</div>{strip}</td>'
         f"<td>{author}</td><td>{date_html(cover)}</td>"
         f'<td class="num"></td><td></td>'
-        f"<td>{applied_html(item.record)}</td></tr>"
+        f"<td>{applied_html(item)}</td></tr>"
     )
     return covered(row, href)
 
@@ -4110,11 +4124,14 @@ def machines_chart(site: Site) -> str:
 def stats_page(site: Site) -> str:
     """What the records hold, counted: series, bases, builds, records, weeks."""
     applied, bases = site.applied, site.bases
+    fetched = [item for item in site.unapplied if item.fetched]
+    failed = [item for item in site.unapplied if not item.fetched]
     builds = sum(len(overview.builds) for overview in site.overviews)
     cards = [
         stat_card("Series", site.series_count),
         stat_card("Applied", len(applied)),
-        stat_card("Could not apply", len(site.unapplied)),
+        stat_card("Could not apply", len(failed)),
+        stat_card("Fetched only", len(fetched)),
         stat_card("Bases", len(bases)),
         stat_card("Builds", builds),
         stat_card("Records", len(site.entries)),
@@ -4128,7 +4145,8 @@ def stats_page(site: Site) -> str:
             "Bases",
             (e for o in bases for p in o.builds for e in p.tree.records.values()),
         ),
-        ("Could not apply", (item.record for item in site.unapplied)),
+        ("Could not apply", (item.record for item in failed)),
+        ("Fetched only", (item.record for item in fetched)),
     )
     kinds = ("pass", "fail", "skip", "error", "unreadable")
     records: list[list[str]] = []
@@ -4280,7 +4298,7 @@ def plain_builds(overview: Overview, root: str, *, dated: bool) -> str:
 
 
 def unapplied_page(item: Unapplied, marks: Marks, site: Site) -> str:
-    """A series that does not apply: its cover letter, then what the tool printed."""
+    """A series no commit came from: its cover letter, then what the tool printed."""
     root = "../" * len(item.parts)
     cover = item.cover
     if isinstance(cover, Cover):
@@ -4300,11 +4318,13 @@ def unapplied_page(item: Unapplied, marks: Marks, site: Site) -> str:
     else:
         shown = f'<p class="note">{mono(f"{record.path}: {record.reason}")}</p>'
     tool = item.applier.value
+    said = f"{tool} could not apply the series, so nothing of it was built or checked."
+    if item.fetched:
+        said = "The series was fetched. Nothing applied it yet."
     body = f"""
 {back_link(root, site.page("index.html"))}
 <section><h1>{escape(unapplied_title(item))}</h1>
-<p class="muted">{tool} could not apply the series, so nothing of it was built or
-checked.</p></section>
+<p class="muted">{said}</p></section>
 <section>{definitions(items)}</section>
 <section><h2>{tool}</h2><details id="{anchors([item.key])[item.key]}" open>
 <summary>{entry_head(item.key, record, None)}</summary>
