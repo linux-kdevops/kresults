@@ -621,7 +621,9 @@ def file_run(args: argparse.Namespace) -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     summary = (__doc__ or "").partition("\n")[0]
-    parser = argparse.ArgumentParser(description=summary, allow_abbrev=False)
+    parser = argparse.ArgumentParser(
+        prog="krecord run", description=summary, allow_abbrev=False
+    )
     parser.add_argument("--records", type=Path, default=state(), metavar="DIR")
     for option in ("command", "producer"):
         parser.add_argument(f"--{option}", required=True)

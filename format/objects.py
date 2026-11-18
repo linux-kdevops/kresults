@@ -7,9 +7,9 @@
 """Write the objects.json of one build of a series (README.md).
 
 Run at the top of the Git work tree that was built, its HEAD the series'
-tip, once kseries has written the series:
+tip, once krecord series has written the series:
 
-    kobjects --config build/.config --configuration-file build/.config.name
+    krecord objects --config build/.config --configuration-file build/.config.name
 
 Print each object and each file not built, then the file written, and exit
 0, or why there is none and exit 1.
@@ -88,7 +88,9 @@ def objects_of(args: argparse.Namespace) -> tuple[Path, Json]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     summary = (__doc__ or "").partition("\n")[0]
-    parser = argparse.ArgumentParser(description=summary, allow_abbrev=False)
+    parser = argparse.ArgumentParser(
+        prog="krecord objects", description=summary, allow_abbrev=False
+    )
     parser.add_argument("--config", type=Path, required=True, metavar="FILE")
     name = parser.add_mutually_exclusive_group(required=True)
     name.add_argument("--configuration", metavar="NAME")

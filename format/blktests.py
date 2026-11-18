@@ -16,11 +16,11 @@ results directory with, in it:
   for, which alone says why a test did not run. Without it such a test
   leaves no record.
 
-    kblktests --results DIR --config build/.config --configuration NAME ...
+    krecord blktests --results DIR --config build/.config --configuration NAME ...
 
 --qemu names the QEMU the machine under test ran on, a tool of each entry.
 Print each file written, and how many results leave no record with why.
-Exit 0 either way, as krecord does.
+Exit 0 either way, as krecord run does.
 """
 
 import argparse
@@ -329,7 +329,9 @@ def file_results(args: argparse.Namespace) -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     summary = (__doc__ or "").partition("\n")[0]
-    parser = argparse.ArgumentParser(description=summary, allow_abbrev=False)
+    parser = argparse.ArgumentParser(
+        prog="krecord blktests", description=summary, allow_abbrev=False
+    )
     parser.add_argument("--results", type=Path, required=True, metavar="DIR")
     parser.add_argument("--records", type=Path, default=state(), metavar="DIR")
     parser.add_argument("--producer", required=True, metavar="NAME")

@@ -8,7 +8,7 @@
 
 Run at the top of the Git work tree that holds them:
 
-    kseries --range BASE..TIP [--mbox FILE]
+    krecord series --range BASE..TIP [--mbox FILE]
 
 BASE.. ends at the tree's HEAD. FILE is the mbox of the thread the
 commits were posted as; one that is not there, or whose patches are not
@@ -246,7 +246,9 @@ def series_of(range_: str, project: str, mbox: Path | None = None) -> tuple[str,
 
 def main(argv: Sequence[str] | None = None) -> int:
     summary = (__doc__ or "").partition("\n")[0]
-    parser = argparse.ArgumentParser(description=summary, allow_abbrev=False)
+    parser = argparse.ArgumentParser(
+        prog="krecord series", description=summary, allow_abbrev=False
+    )
     parser.add_argument("--range", required=True, metavar="BASE..TIP")
     parser.add_argument("--mbox", type=Path, metavar="FILE")
     parser.add_argument("--project", default="linux", metavar="NAME")
