@@ -24,6 +24,7 @@ SUBCOMMANDS = {
     "series": "series",
     "objects": "objects",
     "blktests": "blktests",
+    "lore": "lore",
 }
 
 

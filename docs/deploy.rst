@@ -33,7 +33,8 @@ Name your :term:`lab <Lab>` once, in lowercase letters, digits and ``-``:
    $ git config --global kresults.origin my-lab
 
 ``krecord`` writes each kind of file by a subcommand: ``run``, ``series``,
-``objects`` and ``blktests``. Options with no subcommand are ``run``'s.
+``objects``, ``blktests`` and ``lore``. Options with no subcommand are
+``run``'s.
 
 ``krecord`` files a :term:`record <Record>` of one run of a command. Run
 the command as a transient `systemd`_ user unit, in the tree, and name
@@ -155,6 +156,22 @@ leaves no record without it. A ``machine/url`` the run copies there is
 the ``url`` of blktests, where its source can be read. ``--qemu FILE``
 names the QEMU of the machine as a second tool. A result filed already
 is left as it is.
+
+``krecord lore`` files the :term:`series <Series>` of a maildir that
+lorefetch fills, each under its Message-ID. Run it once lorefetch has added the
+threads that match a query, with the maildir and that query:
+
+.. code-block:: console
+
+   $ krecord lore --maildir lore --query 's:PATCH AND d:3.days.ago..' \
+       --producer NAME --producer-version 1
+
+:doc:`format` says which threads are series. ``--lorefetch DIR`` names
+the directory an install of lorefetch left, with ``version``, the
+``git describe`` of its source, and ``url``, where that source can be
+read. Without it lorefetch is the one on ``PATH``, named by its store path
+or its package. A series filed already is left as it is until its thread
+holds more mails.
 
 Checking records
 ================

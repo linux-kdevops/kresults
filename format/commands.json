@@ -179,6 +179,11 @@
           "under": "series"
         },
         {
+          "command": "lorefetch --query QUERY",
+          "record": "b4/mbox.json",
+          "under": "series"
+        },
+        {
           "command": "b4 shazam",
           "record": "b4/shazam.json",
           "under": "series"

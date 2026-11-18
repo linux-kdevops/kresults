@@ -262,7 +262,7 @@ linux/                                   the project
 │       └── fstests/xfs_bs4k_ss512/generic/001.json
 └── <message-id>/                        a series
     └── b4/
-        ├── mbox.json                    b4 mbox
+        ├── mbox.json                    b4 mbox, or lorefetch
         ├── mbox.mbx                     the thread it saved
         └── shazam.json                  b4 shazam
 qemu/                                    another project
@@ -419,6 +419,22 @@ fetching the thread posted, `b4/mbox.mbx` for the thread saved, and
 A reader takes the series' subject, author and date from the message
 that starts the thread in `mbox.mbx`, the one that answers no other. A
 series that does not apply has these records alone.
+
+A thread that lorefetch fetched is filed under the same two names, with
+lorefetch as the tool of its entry and `lorefetch --query QUERY` as its
+command, so a reader finds a series' thread in one place whatever
+fetched it. A series with `mbox.json` and `mbox.mbx` alone was fetched,
+and nothing has applied it. `krecord lore` files the threads of the maildir
+lorefetch fills. A thread is a series when the message that starts it
+has a subject whose prefixes hold `PATCH`, as `[PATCH v3 0/2]` and
+`[RFC PATCH]` do: a reply whose thread the maildir lacks is none, nor is
+a `FAILED:` notice. A series with a prefix that names a kernel version,
+as `[PATCH 6.12 000/670]` and `[PATCH 6.6.y]` do, is for a stable tree
+and is not recorded. `mbox.mbx` holds the thread's mails in the maildir,
+the first one first and the rest by Message-ID. An invocation starts when
+lorefetch wrote the thread's last mail, and its `seconds` are 0: nothing
+keeps how long one thread of a query took. A thread that grew since it
+was filed is filed again whole, as one more invocation.
 
 ## Versions
 

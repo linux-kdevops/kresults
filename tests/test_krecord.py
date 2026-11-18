@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "format"))
 
 import krecord
 
-NAMES = "run, series, objects, blktests"
+NAMES = "run, series, objects, blktests, lore"
 
 
 class KrecordTest(unittest.TestCase):

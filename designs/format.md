@@ -110,6 +110,13 @@ the version (`format/CHANGES.md`).
   `subject.message_id` and lies under the Message-ID, with no
   `series.json`: the series is recorded before it applies to any commit,
   and one that did not apply has no commit to lie under.
+- A thread lorefetch fetched is filed as `b4/mbox`, with lorefetch as its
+  entry's tool. A record is named for the tool that ran, and this one is
+  not: the site and every reader take a series' thread from that one
+  name, and a second name would have each of them look in two places.
+  The entry still says what ran. Its command names the query and no
+  maildir, which only places files, so `krecord lore` is given the query: the
+  maildir keeps none.
 - A record's name may name the compiler, filled from the `.config`.
   `W=1e` keeps the runs of two compilers apart, and a producer that
   named neither would write its line once per compiler.
