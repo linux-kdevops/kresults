@@ -1,9 +1,4 @@
-#!/usr/bin/env python3
 # SPDX-License-Identifier: copyleft-next-0.3.1
-# /// script
-# requires-python = ">=3.11"
-# dependencies = []
-# ///
 """Write the series.json of a range of commits (README.md).
 
 Run at the top of the Git work tree that holds them:
@@ -263,7 +258,3 @@ def main(argv: Sequence[str] | None = None) -> int:
     # A path unit on the tree's top sees no write below it: mark the change.
     os.utime(args.records)
     return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

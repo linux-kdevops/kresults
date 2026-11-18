@@ -143,14 +143,14 @@ class ObjectsTest(unittest.TestCase):
         directory = self.records / "linux" / self.name
         said = self.write("--configuration=defconfig", status=1, named=False)
         file = directory / "series.json"
-        wanted = f"no objects: {file} does not exist: kseries writes it\n"
+        wanted = f"no objects: {file} does not exist: krecord series writes it\n"
         self.assertEqual(said, wanted)
         # krecord leaves a series.json that lists no commit: a base's.
         base: Json = {"commits": [], "sources": ["block/built.c"]}
         directory.mkdir(parents=True)
         file.write_text(json.dumps(base))
         said = self.write("--configuration=defconfig", status=1, named=False)
-        wanted = f"no objects: {file} is a base's: kseries names a series\n"
+        wanted = f"no objects: {file} is a base's: krecord series names a series\n"
         self.assertEqual(said, wanted)
         self.assertEqual(list(directory.iterdir()), [file])
 

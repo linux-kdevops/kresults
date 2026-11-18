@@ -92,9 +92,9 @@ the version (`format/CHANGES.md`).
   mbox of a series lies under its Message-ID, and a producer that
   applies the series itself records nothing there. The letter of a
   cover commit comes first: it is the tree's own, and the mail may be
-  of an older revision. kseries fetches nothing. It uses a thread only
-  when each commit of the range has the subject of one of its patches,
-  since a tree keeps the thread of the series it held before.
+  of an older revision. krecord series fetches nothing. It uses a thread
+  only when each commit of the range has the subject of one of its
+  patches, since a tree keeps the thread of the series it held before.
 - A run that read commits as patches gives its range, on krecord's
   command line or in a file. The record holds the range
   whole, in `subject.range` and in the command, and lies under its last

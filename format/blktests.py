@@ -1,9 +1,4 @@
-#!/usr/bin/env python3
 # SPDX-License-Identifier: copyleft-next-0.3.1
-# /// script
-# requires-python = ">=3.11"
-# dependencies = []
-# ///
 """File the results of one blktests run as records under --records (README.md).
 
 Run in the tree of the kernel under test, once the run has copied its
@@ -353,7 +348,3 @@ def main(argv: Sequence[str] | None = None) -> int:
     except Exception as error:  # noqa: BLE001
         sys.stderr.write(f"no record: {type(error).__name__}: {error}\n")
     return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

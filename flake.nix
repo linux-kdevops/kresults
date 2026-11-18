@@ -45,30 +45,6 @@
           ];
           text = ''exec python3 ${./format}/krecord.py "$@"'';
         };
-        kseries = pkgs.writeShellApplication {
-          name = "kseries";
-          runtimeInputs = [
-            pkgs.python3
-            pkgs.git
-          ];
-          text = ''exec python3 ${./format}/series.py "$@"'';
-        };
-        kobjects = pkgs.writeShellApplication {
-          name = "kobjects";
-          runtimeInputs = [
-            pkgs.python3
-            pkgs.git
-          ];
-          text = ''exec python3 ${./format}/objects.py "$@"'';
-        };
-        kblktests = pkgs.writeShellApplication {
-          name = "kblktests";
-          runtimeInputs = [
-            pkgs.python3
-            pkgs.git
-          ];
-          text = ''exec python3 ${./format}/blktests.py "$@"'';
-        };
         render = pkgs.writeShellApplication {
           name = "krender";
           runtimeInputs = [
@@ -77,16 +53,13 @@
           ];
           text = ''exec python3 ${./format}/render.py --revision ${nixpkgs.lib.escapeShellArg revision} "$@"'';
         };
-        # The six programs and the units, which find them by store path
+        # The three programs and the units, which find them by store path
         # where a clone's units search a developer's own directories.
         kresults = pkgs.symlinkJoin {
           name = "kresults";
           paths = [
             validate
             krecord
-            kseries
-            kobjects
-            kblktests
             render
           ];
           postBuild = ''

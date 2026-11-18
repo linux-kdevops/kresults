@@ -34,8 +34,6 @@ Name your :term:`lab <Lab>` once, in lowercase letters, digits and ``-``:
 
 ``krecord`` writes each kind of file by a subcommand: ``run``, ``series``,
 ``objects`` and ``blktests``. Options with no subcommand are ``run``'s.
-``kseries``, ``kobjects`` and ``kblktests``, the names the last three had
-as programs of their own, still work until a later release.
 
 ``krecord`` files a :term:`record <Record>` of one run of a command. Run
 the command as a transient `systemd`_ user unit, in the tree, and name

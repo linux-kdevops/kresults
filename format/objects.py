@@ -1,9 +1,4 @@
-#!/usr/bin/env python3
 # SPDX-License-Identifier: copyleft-next-0.3.1
-# /// script
-# requires-python = ">=3.11"
-# dependencies = []
-# ///
 """Write the objects.json of one build of a series (README.md).
 
 Run at the top of the Git work tree that was built, its HEAD the series'
@@ -41,9 +36,9 @@ OUTSIDE = ("tools/", "scripts/", "Documentation/")
 
 def sources_of(file: Path) -> list[str]:
     """Return the C files a series.json lists, or raise why it lists none."""
-    need(file.is_file(), f"{file} does not exist: kseries writes it")
+    need(file.is_file(), f"{file} does not exist: krecord series writes it")
     series: Json = json.loads(file.read_bytes())
-    need(series["commits"], f"{file} is a base's: kseries names a series")
+    need(series["commits"], f"{file} is a base's: krecord series names a series")
     return [
         source
         for source in series["sources"]
@@ -109,7 +104,3 @@ def main(argv: Sequence[str] | None = None) -> int:
     # A path unit on the tree's top sees no write below it: mark the change.
     os.utime(args.records)
     return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
