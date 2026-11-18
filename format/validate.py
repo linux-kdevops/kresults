@@ -23,7 +23,7 @@ from typing import Any, NotRequired, TypedDict, cast
 
 from jsonschema import Draft7Validator, ValidationError, validators
 from jsonschema.protocols import Validator
-from record import ARCHES, COMPILERS, known, run_of
+from record import ARCHES, COMPILERS, SERIES, known, run_of
 
 # The fields the checks read, which a file has once its schema passes it.
 
@@ -156,16 +156,13 @@ class Place:
     """Where a file lies: under a series, a commit, or a build of a commit."""
 
     project: str
-    # The directory of the commit, or of the series, whose name holds an @.
+    # The directory of the commit, or of the series under SERIES.
     name: str
     # The build's CONFIGURATION/ARCH/COMPILER; empty outside a build.
     build: tuple[str, ...]
     # The path below the build, or else below the commit or the series.
     below: tuple[str, ...]
-
-    @property
-    def series(self) -> bool:
-        return "@" in self.name
+    series: bool = False
 
     @property
     def level(self) -> str:
@@ -177,13 +174,17 @@ def locate(parts: tuple[str, ...]) -> Place | None:
     if not parts[2:]:
         return None
     project, name, *rest = parts
-    if "@" not in name:
-        # A configuration is one directory or more, and a file lies below the
-        # compiler.
-        for at in range(1, len(rest) - 2):
-            if rest[at] in ARCHES and rest[at + 1] in COMPILERS:
-                build, below = rest[: at + 2], rest[at + 2 :]
-                return Place(project, name, tuple(build), tuple(below))
+    if name == SERIES:
+        # A file beside the series' directories is of none of them.
+        if not rest[1:]:
+            return None
+        return Place(project, rest[0], (), tuple(rest[1:]), series=True)
+    # A configuration is one directory or more, and a file lies below the
+    # compiler.
+    for at in range(1, len(rest) - 2):
+        if rest[at] in ARCHES and rest[at + 1] in COMPILERS:
+            build, below = rest[: at + 2], rest[at + 2 :]
+            return Place(project, name, tuple(build), tuple(below))
     return Place(project, name, (), tuple(rest))
 
 

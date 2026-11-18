@@ -41,7 +41,7 @@ GUEST = "fstests/xfs-filesystem/x86_64/clang"
 TEST = f"{COMMIT}/{GUEST}/fstests/xfs_4k/generic/001.json"
 APPLIED = "20260102-topic-v1-0-0123456789ab@example.org"
 UNAPPLIED = "20260103030405.1234-1-dev@example.org"
-SHAZAM = f"linux/{UNAPPLIED}/b4/shazam.json"
+SHAZAM = f"linux/series/{UNAPPLIED}/b4/shazam.json"
 CONFIG = "sha256:" + 64 * "1"
 OTHER_CONFIG = "sha256:" + 64 * "2"
 CLANG = {"ARCH": "x86_64", "LLVM": "1"}
@@ -132,10 +132,11 @@ def posted(message_id: str, **shazam: object) -> Files:
     """Return the files of a series, whose b4 shazam passed unless shazam says."""
     subject = {"message_id": message_id}
     fetch = f"b4 mbox --single-message {message_id}"
+    series = f"linux/series/{message_id}"
     return {
-        f"linux/{message_id}/b4/mbox.json": record(subject, entry(fetch)),
-        f"linux/{message_id}/b4/mbox.mbx": "From: A Developer <dev@example.org>\n\n",
-        f"linux/{message_id}/b4/shazam.json": record(
+        f"{series}/b4/mbox.json": record(subject, entry(fetch)),
+        f"{series}/b4/mbox.mbx": "From: A Developer <dev@example.org>\n\n",
+        f"{series}/b4/shazam.json": record(
             subject, entry(f"b4 shazam {message_id}", **shazam)
         ),
     }
@@ -472,6 +473,12 @@ class Validate(unittest.TestCase):
         at(files, SHAZAM)["subject"]["message_id"] = APPLIED
         self.assert_problem(files, SHAZAM, f"lies under {UNAPPLIED}/, not {APPLIED}/")
 
+    def test_series_beside_the_commits(self) -> None:
+        """A series beside the commits, and not under series/, is one of them."""
+        path = SHAZAM.replace("/series/", "/")
+        found = dict(problems(moved(SHAZAM, path)))
+        self.assertIn("its subject is a series", found[path])
+
     def test_described_directory(self) -> None:
         files, path = refiled("linux/v1.2-3-gfedcba987654", OTHER)
         self.assert_problem(files, path, f"does not name {TIP}")
@@ -487,7 +494,8 @@ class Validate(unittest.TestCase):
         self.assertEqual(problems(files), [])
 
     def test_file_above_a_commit(self) -> None:
-        for path in ("README", "linux/README", "linux/series.json"):
+        stray = ("README", "linux/README", "linux/series.json", "linux/series/x.json")
+        for path in stray:
             with self.subTest(path=path):
                 files = good()
                 files[path] = "{}"
@@ -496,9 +504,9 @@ class Validate(unittest.TestCase):
     def test_file_in_another_place(self) -> None:
         for file, path in (
             (SERIES, f"{COMMIT}/{TINY}/series.json"),
-            (SERIES, f"linux/{APPLIED}/series.json"),
+            (SERIES, f"linux/series/{APPLIED}/series.json"),
             (OBJECTS, f"{COMMIT}/objects.json"),
-            (OBJECTS, f"linux/{APPLIED}/{TINY}/objects.json"),
+            (OBJECTS, f"linux/series/{APPLIED}/{TINY}/objects.json"),
         ):
             with self.subTest(path=path):
                 found = problems(copied(file, path))
@@ -603,7 +611,7 @@ class Validate(unittest.TestCase):
             (HTMLDOCS, f"{COMMIT}/make/allconfig/filesystems.json"),
             (MAKE, f"{COMMIT}/{TINY}/make/modules.json"),
             (SPARSE, f"{COMMIT}/{TINY}/lint/init/main.o.json"),
-            (SHAZAM, f"linux/{UNAPPLIED}/b4/am.json"),
+            (SHAZAM, f"linux/series/{UNAPPLIED}/b4/am.json"),
         ):
             with self.subTest(to=to):
                 self.assertEqual(problems(moved(path, to)), [(to, UNKNOWN)])
@@ -643,7 +651,12 @@ class Validate(unittest.TestCase):
         shazam = record({"commit": TIP}, entry(f"b4 shazam {APPLIED}"))
         cases: tuple[tuple[str, Json, str, str], ...] = (
             (f"{COMMIT}/{TINY}/checkpatch.pl.json", patch, "a build", "the commit"),
-            (f"linux/{APPLIED}/checkpatch.pl.json", sent, "a series", "the commit"),
+            (
+                f"linux/series/{APPLIED}/checkpatch.pl.json",
+                sent,
+                "a series",
+                "the commit",
+            ),
             (f"{COMMIT}/make/all.json", make, "the commit", "a build"),
             (f"{COMMIT}/b4/shazam.json", shazam, "the commit", "a series"),
         )
@@ -785,9 +798,9 @@ class Validate(unittest.TestCase):
             f"{COMMIT}/{TINY}/make/config",
             f"{COMMIT}/{TINY}/.config",
             f"{COMMIT}/{TINY}/b4/mbox.mbx",
-            f"linux/{APPLIED}/mbox.mbx",
-            f"linux/{APPLIED}/config",
-            f"linux/{APPLIED}/{TINY}/config",
+            f"linux/series/{APPLIED}/mbox.mbx",
+            f"linux/series/{APPLIED}/config",
+            f"linux/series/{APPLIED}/{TINY}/config",
         ):
             with self.subTest(path=path):
                 files = good()

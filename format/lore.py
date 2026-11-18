@@ -39,6 +39,7 @@ from pathlib import Path
 
 from record import (
     MESSAGE,
+    SERIES,
     Json,
     add_producer,
     add_tree,
@@ -197,7 +198,7 @@ def file_series(args: argparse.Namespace) -> None:
         if why := left_out(thread[0]):
             left[why] += 1
             continue
-        directory: Path = args.records / args.project / name / "b4"
+        directory: Path = args.records / args.project / SERIES / name / "b4"
         filed = directory / "mbox.json"
         # A series filed is left as it is until its thread holds more.
         if filed.is_file() and held(directory / "mbox.mbx") >= len(thread):

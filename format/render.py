@@ -44,7 +44,7 @@ from statistics import median
 from typing import TypeIs
 from urllib.parse import quote, unquote, urlsplit
 
-from record import ARCHES, COMPILERS, unmoved
+from record import ARCHES, COMPILERS, SERIES, unmoved
 
 SCHEMA = 1
 # A record's first directory is the tool that ran; make's, the build, comes
@@ -1430,6 +1430,9 @@ def read_config(file: Path) -> bytes | None:
 
 
 def subdirs(path: Path) -> list[Path]:
+    """The directories of path, and none of one that is no directory."""
+    if path.is_symlink() or not path.is_dir():
+        return []
     return sorted(p for p in path.iterdir() if p.is_dir() and not p.is_symlink())
 
 
@@ -1496,8 +1499,9 @@ def load_came(records: Path, commit: Path) -> Came:
         return Came(Unreadable(file.relative_to(records).as_posix(), str(error)))
     if not series.message_id:
         return Came(series, cover)
-    mbox = inside(commit.parent, f"{series.message_id}/{MBOX}")
-    shazam = inside(commit.parent, f"{series.message_id}/b4/shazam.json")
+    own = f"{SERIES}/{series.message_id}"
+    mbox = inside(commit.parent, f"{own}/{MBOX}")
+    shazam = inside(commit.parent, f"{own}/b4/shazam.json")
     # The letter series.json holds has its text, which the mbox's headers lack.
     return Came(series, cover or load_cover(records, mbox), load_log(records, shazam))
 
@@ -1558,12 +1562,12 @@ def projects(records: Path) -> list[Path]:
 def load(records: Path, history: Mapping[tuple[str, ...], Recorded]) -> list[Tree]:
     """Every commit's records, under no build first, then of each of its builds.
 
-    A directory named by a Message-ID is no commit.
+    The directory of a project's series is no commit.
     """
     trees: list[Tree] = []
     for project in projects(records):
         for commit in subdirs(project):
-            if "@" in commit.name:
+            if commit.name == SERIES:
                 continue
             builds = ["/".join(build) for build in builds_of(commit)]
             if commit_files(commit):
@@ -1633,8 +1637,8 @@ def load_unapplied(
     }
     found: list[Unapplied] = []
     for project in projects(records):
-        for directory in subdirs(project):
-            if "@" not in directory.name or (project.name, directory.name) in named:
+        for directory in subdirs(project / SERIES):
+            if (project.name, directory.name) in named:
                 continue
             for applier, key in APPLIERS:
                 file = inside(directory, f"{key}.json")
@@ -1701,8 +1705,8 @@ def tree_of(parts: Sequence[str]) -> tuple[str, ...] | None:
     build; the records of a commit under no build its project and commit.
     """
     match parts:
-        case [project, name, _, *_] if "@" in name:
-            return (project, name)
+        case [project, "series", *below]:
+            return (project, below[0]) if below[1:] else None
         case [project, commit, *below] if below and below != [SERIES_JSON]:
             end = build_end(below)
             if end is None:

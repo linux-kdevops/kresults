@@ -2,9 +2,10 @@
 
 # The format: decisions
 
-`format/README.md` is the format as it stands. No producer writes version
-1 yet, so a decision changes it in place. Once one does, a change raises
-the version (`format/CHANGES.md`).
+`format/README.md` is the format as it stands. No records of version 1
+are published yet, so a decision changes it in place, as the level for
+series did. Once a tree is public, a change raises the version
+(`format/CHANGES.md`).
 
 ## Decided
 
@@ -110,6 +111,14 @@ the version (`format/CHANGES.md`).
   `subject.message_id` and lies under the Message-ID, with no
   `series.json`: the series is recorded before it applies to any commit,
   and one that did not apply has no commit to lie under.
+- A project's series lie under one directory, `series`, and not beside
+  its commits. One MAINTAINERS entry watched for a month filed 104
+  series beside 3 commits, which a listing of the project lost among
+  them. No commit takes the name, which no tag that starts with `v` and
+  a digit has and no hash spells, so a path still tells the two apart,
+  by its place and not by an `@` in a name. A project may have any name,
+  `series` too: it is the first directory of a path, and the level the
+  second.
 - A thread lorefetch fetched is filed as `b4/mbox`, with lorefetch as its
   entry's tool. A record is named for the tool that ran, and this one is
   not: the site and every reader take a series' thread from that one

@@ -50,6 +50,7 @@ class LoreTest(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
         self.records = self.root / "records"
+        self.filed = self.records / "linux" / "series"
         self.maildir = self.root / "maildir"
         self.box = mailbox.Maildir(self.maildir, create=True)
         self.addCleanup(self.box.close)
@@ -99,12 +100,12 @@ class LoreTest(unittest.TestCase):
 
     def read(self, name: str) -> Json:
         self.assertEqual(list(validate.check(self.records)), [])
-        filed = self.records / "linux" / name / "b4" / "mbox.json"
+        filed = self.records / "linux" / "series" / name / "b4" / "mbox.json"
         return json.loads(filed.read_text("utf-8"))
 
     def thread(self, name: str) -> list[str]:
         """Return the Message-IDs of the thread saved of a series, in its order."""
-        saved = mailbox.mbox(self.records / "linux" / name / "b4" / "mbox.mbx")
+        saved = mailbox.mbox(self.filed / name / "b4" / "mbox.mbx")
         self.addCleanup(saved.close)
         return [str(message["Message-ID"]) for message in saved]
 
@@ -112,7 +113,7 @@ class LoreTest(unittest.TestCase):
         self.series()
         said = self.file()
         written = [
-            self.records / "linux" / name / "b4" / file
+            self.filed / name / "b4" / file
             for name in (COVER, SINGLE)
             for file in ("mbox.mbx", "mbox.json")
         ]
@@ -123,7 +124,7 @@ class LoreTest(unittest.TestCase):
         thread = [COVER, "p1@example.org", "p2@example.org", "re@example.org"]
         self.assertEqual(self.thread(COVER), [f"<{name}>" for name in thread])
         self.assertEqual(self.thread(SINGLE), [f"<{SINGLE}>"])
-        mbox = (self.records / "linux" / COVER / "b4" / "mbox.mbx").read_bytes()
+        mbox = (self.filed / COVER / "b4" / "mbox.mbx").read_bytes()
         self.assertTrue(mbox.startswith(lore.FROM + b"Message-ID: <cover@"))
 
     def test_what_is_no_series_leaves_no_record(self) -> None:
@@ -153,7 +154,7 @@ class LoreTest(unittest.TestCase):
         escape = lore.Mail(Path(), "a\x1b[31m@example.org", "[PATCH] x", ())
         self.assertEqual(lore.left_out(escape), lore.NO_NAME)
         self.read(COVER)
-        names = sorted(series.name for series in (self.records / "linux").iterdir())
+        names = sorted(series.name for series in self.filed.iterdir())
         self.assertEqual(names, [COVER, SINGLE])
         # Nothing is written outside the records.
         kept = sorted(path.name for path in self.root.iterdir())

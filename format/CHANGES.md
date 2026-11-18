@@ -9,6 +9,8 @@ removed, and what a reader of the version before must do.
 
 ## 1
 
-The first version, as [README.md] gives it.
+The first version, as [README.md] gives it. It changed in place until
+the first tree of records was published: a tree written before a
+project's series lay under `series/` is not read.
 
 [README.md]: https://github.com/linux-kdevops/kresults/blob/main/format/README.md

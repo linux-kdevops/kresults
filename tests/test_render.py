@@ -1031,7 +1031,7 @@ class B4Log(unittest.TestCase):
         put(name.joinpath(B, *MAKE_ALL), record())
         put(name / "series.json", series_json(commit(), message_id=applied))
         if log is not None:
-            shazam = self.records / "p" / "m@x" / "b4" / "shazam.json"
+            shazam = self.records / "p" / "series" / "m@x" / "b4" / "shazam.json"
             shazam.parent.mkdir(parents=True, exist_ok=True)
             try:
                 put(shazam, record(output=log.decode()))
@@ -1067,7 +1067,9 @@ class B4Log(unittest.TestCase):
         self.assertIn("b4 printed nothing.", self.overview(b""))
 
     def test_not_utf8(self) -> None:
-        self.assertIn("p/m@x/b4/shazam.json: not UTF-8", self.overview(b"\xff\n"))
+        self.assertIn(
+            "p/series/m@x/b4/shazam.json: not UTF-8", self.overview(b"\xff\n")
+        )
 
 
 # A series b4 could not apply, as b4 shazam names it, and what b4 printed.
@@ -1087,7 +1089,8 @@ def unapplied(
 ) -> None:
     """A series by its Message-ID whose record key is data, of that subject."""
     subject = {"project": "linux", "message_id": message_id}
-    put(records / "linux" / message_id / f"{key}.json", {**data, "subject": subject})
+    series = records / "linux" / "series" / message_id
+    put(series / f"{key}.json", {**data, "subject": subject})
 
 
 class NotApplied(unittest.TestCase):
@@ -1096,7 +1099,7 @@ class NotApplied(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.dir)
         self.records = self.dir / "records"
         self.output = self.dir / "public"
-        self.b4 = self.records / "linux" / MESSAGE_ID / "b4"
+        self.b4 = self.records / "linux" / "series" / MESSAGE_ID / "b4"
         command = f"b4 shazam {MESSAGE_ID}"
         shazam = record("fail", NOT_APPLIED, command=command, env={})
         unapplied(self.records, MESSAGE_ID, "b4/shazam", shazam)
@@ -1114,7 +1117,8 @@ class NotApplied(unittest.TestCase):
         )
 
     def test_not_commits(self) -> None:
-        put(self.records / "linux" / "lonely@x" / "b4" / "mbox.mbx", "Subject: s\n")
+        lonely = self.records / "linux" / "series" / "lonely@x"
+        put(lonely / "b4" / "mbox.mbx", "Subject: s\n")
         unapplied(self.records, "fetched@x", "b4/mbox", record())
         unapplied(self.records, "lost@x", "b4/mbox", record("fail", "no message\n"))
         trees = render.load(self.records, {})
@@ -1147,7 +1151,7 @@ class NotApplied(unittest.TestCase):
         fetched = record(command="lorefetch --query s:PATCH", env={}, tools=[tool])
         unapplied(self.records, name, "b4/mbox", fetched)
         put(
-            self.records / "linux" / name / "b4" / "mbox.mbx",
+            self.records / "linux" / "series" / name / "b4" / "mbox.mbx",
             f"From mboxrd@z Thu Jan  1 00:00:00 1970\nMessage-Id: <{name}>\n"
             + cover_letter(
                 "[PATCH 0/2] nvme: <b>wide</b>", "Thu, 05 Nov 2026 10:00:00 +0000"
@@ -1296,7 +1300,7 @@ class NotApplied(unittest.TestCase):
     def test_unreadable(self) -> None:
         put(self.b4 / "shazam.json", "{")
         page = self.page("linux", MESSAGE_ID)
-        self.assertIn(f"linux/{MESSAGE_ID}/b4/shazam.json: not JSON", page)
+        self.assertIn(f"linux/series/{MESSAGE_ID}/b4/shazam.json: not JSON", page)
         self.assertIn('<span class="badge warn">unreadable record</span>', self.page())
 
     def test_error(self) -> None:
@@ -1845,7 +1849,7 @@ class SeriesPage(unittest.TestCase):
             fields["cover"] = fields.pop("cover_kept")
         put(series / "series.json", series_json(patch, message_id=message_id, **fields))
         if cover:
-            mbox = self.records / "linux" / THREAD / "b4" / "mbox.mbx"
+            mbox = self.records / "linux" / "series" / THREAD / "b4" / "mbox.mbx"
             mbox.parent.mkdir(parents=True)
             shutil.copyfile(FIXTURES / "cover.mbx", mbox)
         put(
@@ -2348,7 +2352,8 @@ class Layout(unittest.TestCase):
             put(commit_dir.joinpath(build, *MAKE_ALL), record())
         put(commit_dir / "notes" / "x.json", record())
         put(commit_dir / "x86_64" / "clang" / "make" / "all.json", record())
-        put(self.records / "linux" / "m@x" / "x86_64" / "clang" / "b4.json", record())
+        in_series = self.records / "linux" / "series" / "m@x"
+        put(in_series / "x86_64" / "clang" / "b4.json", record())
         self.assertEqual(
             render.builds_of(commit_dir),
             [
@@ -2458,7 +2463,8 @@ class Layout(unittest.TestCase):
     def test_history(self) -> None:
         for path, key in (
             ("linux/v1/b/x86_64/clang/make/all.json", ("linux", "v1", *B.split("/"))),
-            ("linux/m@x/b4/shazam.json", ("linux", "m@x")),
+            ("linux/series/m@x/b4/shazam.json", ("linux", "m@x")),
+            ("linux/series/README", None),
             ("linux/v1/series.json", None),
             ("linux/v1/b/x86_64/clang", None),
             ("linux/v1/checkpatch.pl.json", ("linux", "v1")),
@@ -2484,7 +2490,7 @@ def add_series(records: Path, name: str, cover: str | None, *lists: str) -> None
         series_json(commit(name), message_id=message_id, lists=list(lists)),
     )
     if cover is not None:
-        put(records / "linux" / message_id / "b4" / "mbox.mbx", cover)
+        put(records / "linux" / "series" / message_id / "b4" / "mbox.mbx", cover)
 
 
 def base_build(records: Path) -> None:
@@ -2519,7 +2525,7 @@ class Index(unittest.TestCase):
         add_series(self.records, "a-bare", None)
         unapplied(self.records, "m@x", "b4/shazam", record("fail"))
         put(
-            self.records / "linux" / "m@x" / "b4" / "mbox.mbx",
+            self.records / "linux" / "series" / "m@x" / "b4" / "mbox.mbx",
             cover_letter("b4", "Mon, 2 Mar 2026 11:00:00 +0000"),
         )
         unapplied(self.records, "f@x", "b4/shazam", record("fail"))
@@ -2832,7 +2838,7 @@ class Index(unittest.TestCase):
             put(self.records.joinpath("linux", name, B, "sparse", "x.json"), data)
         unapplied(self.records, "m@x", "b4/shazam", record("fail"))
         put(
-            self.records / "linux" / "m@x" / "b4" / "mbox.mbx",
+            self.records / "linux" / "series" / "m@x" / "b4" / "mbox.mbx",
             cover_letter("b4", "Tue, 3 Mar 2026 11:00:00 +0000"),
         )
         stats = self.index("stats.html")
@@ -3217,7 +3223,7 @@ class Versions(unittest.TestCase):
         )
         unapplied(self.records, "m@x", "b4/shazam", record("fail"))
         put(
-            self.records / "linux" / "m@x" / "b4" / "mbox.mbx",
+            self.records / "linux" / "series" / "m@x" / "b4" / "mbox.mbx",
             letter("[PATCH v7] nvme-tcp: io_cpu", "Wed, 11 Mar 2026 10:00:00 +0000"),
         )
         self.render()
@@ -3431,10 +3437,10 @@ class Site(unittest.TestCase):
         put(series / "config", x)
         headers = ("Subject", "From", "Date", "Message-Id", "To", "Cc")
         put(
-            project / "m@x" / "b4" / "mbox.mbx",
+            project / "series" / "m@x" / "b4" / "mbox.mbx",
             "".join(f"{h}: {x}@y\n" for h in headers),
         )
-        put(project / "m@x" / "b4" / "shazam.json", record(output=x))
+        put(project / "series" / "m@x" / "b4" / "shazam.json", record(output=x))
         self.make()
         html = self.html()
         self.assertIn("&lt;x&gt;", html)
@@ -3480,7 +3486,8 @@ class Site(unittest.TestCase):
         message = self.dir / "message"
         put(message / "b4" / "mbox.mbx", "Subject: outside\n")
         put(message / "b4" / "shazam.json", record(output="outside"))
-        (self.records / "p" / "m@x").symlink_to(message)
+        (self.records / "p" / "series").mkdir()
+        (self.records / "p" / "series" / "m@x").symlink_to(message)
         series = self.records.joinpath("p", "s", B)
         put(series.joinpath(*MAKE_ALL), record())
         put(
@@ -3654,10 +3661,11 @@ class Git(unittest.TestCase):
 
     def test_unapplied_dated(self) -> None:
         records = self.dir / "records"
-        put(records / "p" / "a@x" / "b4" / "shazam.json", record("fail"))
-        put(records / "p" / "b@x" / "b4" / "shazam.json", record("fail"))
+        series = records / "p" / "series"
+        put(series / "a@x" / "b4" / "shazam.json", record("fail"))
+        put(series / "b@x" / "b4" / "shazam.json", record("fail"))
         self.checkout(records, records)
-        put(records / "p" / "b@x" / "b4" / "shazam.json", record("fail", "x\n"))
+        put(series / "b@x" / "b4" / "shazam.json", record("fail", "x\n"))
         self.env["GIT_COMMITTER_DATE"] = "2026-11-04T10:07:00+01:00"
         self.git(records, "commit", "--quiet", "--all", "--message", "run two")
         history = render.history_of(self.path, records)

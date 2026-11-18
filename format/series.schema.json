@@ -29,7 +29,7 @@
       "$ref": "#/definitions/sha"
     },
     "message_id": {
-      "description": "The Message-ID of the series' first message, without <>, whose records lie under PROJECT/MESSAGE-ID/; empty for a commit that came from no message",
+      "description": "The Message-ID of the series' first message, without <>, whose records lie under PROJECT/series/MESSAGE-ID/; empty for a commit that came from no message",
       "type": "string",
       "pattern": "^([^<>\\s/]+@[^<>\\s/]+)?$"
     },

@@ -121,6 +121,10 @@ DESCRIBE = re.compile(r"(?<!\S)\S*-g[0-9a-f]{7,}(?:-dirty)?(?!\S)")
 # A Message-ID as the schema allows one (record.schema.json): a series
 # whose Message-ID holds a slash is not recorded.
 MESSAGE = re.compile(r"[^<>\s/]+@[^<>\s/]+")
+# The directory of a project that holds its series, each under its
+# Message-ID. No commit takes the name: git describe gives a tag that
+# starts with v and a digit, or a hash.
+SERIES = "series"
 
 
 class NoRecordError(Exception):
@@ -330,7 +334,7 @@ def placed(
     """
     describe = ("--tags", "--match", "v[0-9]*", "--abbrev=12", "--always")
     if message:
-        return {"project": project, "message_id": message}, message
+        return {"project": project, "message_id": message}, f"{SERIES}/{message}"
     if checked:
         tip = checked.partition("..")[2]
         subject: Json = {"project": project, "commit": tip, "range": checked}

@@ -261,7 +261,7 @@ Invocations are kept oldest first.
 ## Where records go
 
 A record's path names its subject, and the subject names it whole.
-Under a project lie its commits and its series:
+Under a project lie its commits, and its series under `series`:
 
 ```text
 linux/                                   the project
@@ -285,11 +285,12 @@ linux/                                   the project
 │   │   └── fio/nvme0n1/atomic-merge.json
 │   └── fstests/xfs-filesystem/x86_64/clang/
 │       └── fstests/xfs_bs4k_ss512/generic/001.json
-└── <message-id>/                        a series
-    └── b4/
-        ├── mbox.json                    b4 mbox, or lorefetch
-        ├── mbox.mbx                     the thread it saved
-        └── shazam.json                  b4 shazam
+└── series/                              its series
+    └── <message-id>/                    a series
+        └── b4/
+            ├── mbox.json                b4 mbox, or lorefetch
+            ├── mbox.mbx                 the thread it saved
+            └── shazam.json              b4 shazam
 qemu/                                    another project
 └── v11.1.0-12-g0123456789ab/            a commit
     ├── series.json
@@ -304,10 +305,11 @@ qemu/                                    another project
   the changes lie on. A tool that read a range of commits read no working
   tree: its record takes no `-dirty`, for the commits it read are the
   same whatever the tree wears.
-- A series is named by the Message-ID of its first message, without
-  `<>`: the message posted, or the first of a local mbox. A Message-ID
-  always holds an `@` and a commit's name never does. One that holds a
-  `/` would be two directories, and its series is not recorded.
+- A series lies under `series/`, named by the Message-ID of its first
+  message, without `<>`: the message posted, or the first of a local
+  mbox. No commit is named `series`: `git describe` gives a tag that
+  starts with `v` and a digit, or a hash. A Message-ID that holds a `/`
+  would be two directories, and its series is not recorded.
 - A build is its configuration, kbuild's `ARCH` and the compiler, each
   a directory. The compiler is `clang` when `LLVM` is set and not empty,
   else `gcc`. A record's name may name the compiler of its build as
@@ -402,7 +404,7 @@ no message has one as well, with an empty `message_id`:
 
 - `commit`: the commit, whole;
 - `message_id`: the series it was applied from, whose records lie under
-  `<project>/<message-id>/`; empty for a commit that came from no
+  `<project>/series/<message-id>/`; empty for a commit that came from no
   message. The commits came from a thread when the subject of each is
   that of one of its patches, at the revision of the message that
   starts it; a thread left from another series names none;

@@ -426,7 +426,7 @@ class RecordTest(unittest.TestCase):
             "--output=b4/mbox.json",
         )
         self.file(printed(f"Looking up {posted} in lore"), options=options)
-        series = f"linux/{posted}"
+        series = f"linux/series/{posted}"
         # The message the series was posted as, which the format names beside
         # its record.
         (self.records / series / "b4" / "mbox.mbx").write_text("From: A Developer\n\n")

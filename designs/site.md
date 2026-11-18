@@ -89,6 +89,10 @@ About is Octicons', under MIT.
   links its thread as well; no thread holds the letter of a series not
   yet sent. Without a letter there, the page shows the headers of the
   mbox under the Message-ID.
+- A series' page keeps its address, `<project>/<message-id>/`, whatever
+  directory the records keep the series in. `series/` is the tree's own
+  level: a page's address names what a viewer follows, a project and a
+  series.
 - An entry names its tools on one line: each by name, the version it
   prints, and its build in parentheses, a link on a page where the tool
   has a `url`. A series' entry alone has the line, as it alone has the
