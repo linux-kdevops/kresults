@@ -796,6 +796,8 @@ class Record:
     # Whether it checks the series itself, which no base has: its subject
     # names a range of commits, or it is the build of an earlier commit.
     series_check: bool = False
+    # How many invocations it has.
+    runs: int = field(default=1, compare=False)
 
     @property
     def ran(self) -> tuple[object, ...]:
@@ -1246,6 +1248,7 @@ def parse_entry(data: object, subject: Subject | None = None) -> Record:
         file=subject.file if subject else None,
         test=subject.test if subject else None,
         series_check=subject is not None and subject.range is not None,
+        runs=len(invoked),
     )
 
 
@@ -1729,6 +1732,7 @@ class Change(Enum):
     PASSES_ON_BOTH = "passes on both"
     FIXED = "fixed"
     INTRODUCED = "introduced"
+    UNSTABLE = "unstable"
     NEW_LINES = "fails on both, with new lines"
     NOTHING_NEW = "fails on both, nothing new"
     SKIPS_ON_BOTH = "skips on both"
@@ -1751,6 +1755,7 @@ KIND = {
     Change.PASSES_ON_BOTH: "pass",
     Change.FIXED: "pass",
     Change.INTRODUCED: "fail",
+    Change.UNSTABLE: "warn",
     Change.NEW_LINES: "fail",
     Change.NOTHING_NEW: "warn",
     Change.SKIPS_ON_BOTH: "none",
@@ -1807,6 +1812,32 @@ class Unit(Enum):
 
 
 @dataclass(frozen=True, slots=True)
+class PassFail:
+    """How many runs of one side's entries that ran the same passed and failed."""
+
+    passed: int = 0
+    failed: int = 0
+
+    @property
+    def unstable(self) -> bool:
+        return bool(self.passed and self.failed)
+
+    @property
+    def text(self) -> str:
+        """Its counts but a 0: "3 pass, 2 fail", "5 pass", or ""."""
+        counts = ((self.passed, "pass"), (self.failed, "fail"))
+        return ", ".join(f"{count} {word}" for count, word in counts if count)
+
+
+def pass_fail(entries: Iterable[Record]) -> PassFail:
+    """The runs of entries that passed and that failed; skips and errors aside."""
+    runs = Counter[Status]()
+    for entry in entries:
+        runs[entry.status] += entry.runs
+    return PassFail(runs[Status.PASSED], runs[Status.FAILED])
+
+
+@dataclass(frozen=True, slots=True)
 class Comparison:
     change: Change
     # When both are records: how many of the series' output lines, or
@@ -1826,6 +1857,9 @@ class Comparison:
     ran_differently: bool = False
     # The samples of the base's entry that ran what the series' ran.
     against: tuple[Metric, ...] = ()
+    # Of an UNSTABLE one: how the runs compare_entry() counts passed and
+    # failed, the series', then the base's.
+    sides: tuple[PassFail, PassFail] = (PassFail(), PassFail())
 
     @property
     def kind(self) -> str:
@@ -1867,6 +1901,10 @@ class Comparison:
             if self.new:
                 found.append(self.counts(both=False))
             return ", ".join(found)
+        if self.change is Change.UNSTABLE:
+            named = zip(("series", "base"), self.sides, strict=True)
+            said = [f"{side} {runs.text}" for side, runs in named if runs.text]
+            return f"{self.change.value}: {'; '.join(said)}"
         if self.change is Change.NEW_LINES:
             return f"fails on both, {self.counts()}"
         if self.change is Change.NOTHING_NEW and self.gone:
@@ -2071,13 +2109,17 @@ def compare_entry(
     *,
     new_file: bool = False,
     runs: Sequence[Record] = (),
+    mine: Sequence[Record] = (),
 ) -> Comparison:
     """The series' entry now set against then, its base's representative.
 
     Of runs, the base's entries (then alone when none are given), the one
     that ran what now ran stands in for then, the one with now's .config
     first, then the latest; without one, then does, and the comparison says
-    so.
+    so. It is UNSTABLE where one kernel's runs both passed and failed. Those
+    are the series' entries in mine (now alone when none are given) that
+    ran what now ran under its .config, and the base's in runs that ran it
+    under the .config of the one standing in.
     """
     if isinstance(now, Unreadable):
         return Comparison(Change.UNREADABLE)
@@ -2088,10 +2130,25 @@ def compare_entry(
     if isinstance(then, Unreadable):
         return Comparison(Change.UNREADABLE_BASE)
     same = [run for run in runs or (then,) if run.ran == now.ran]
+    ours = pass_fail(run for run in mine or (now,) if alike(run, now))
     if not same:
-        return compare_records(now, then, ran_differently=True)
+        found = compare_records(now, then, ran_differently=True)
+        return unsteady(found, ours, PassFail())
     then = max(same, key=lambda run: (run.config == now.config, run.started))
-    return dataclasses.replace(compare_records(now, then), against=then.metrics)
+    found = dataclasses.replace(compare_records(now, then), against=then.metrics)
+    return unsteady(found, ours, pass_fail(run for run in same if alike(run, then)))
+
+
+def alike(run: Record, shown: Record) -> bool:
+    """Whether run ran what shown ran, on a kernel of the same .config."""
+    return (run.ran, run.config) == (shown.ran, shown.config)
+
+
+def unsteady(found: Comparison, ours: PassFail, theirs: PassFail) -> Comparison:
+    """found, or UNSTABLE with its diff where either side passed and failed."""
+    if not (ours.unstable or theirs.unstable):
+        return found
+    return dataclasses.replace(found, change=Change.UNSTABLE, sides=(ours, theirs))
 
 
 # make's target that builds the Documentation directory after it, which the
@@ -2153,6 +2210,7 @@ def compare(
             theirs.get(key),
             new_file=adds_file(series, key, mine.get(key)),
             runs=runs.get(key, ()),
+            mine=tree.runs.get(key, ()),
         )
         for key in sorted(keys, key=lambda key: key.split("/"))
     }
@@ -2254,6 +2312,7 @@ def overviews_of(pages: list[Page]) -> list[Overview]:
 # and what its title says it is.
 FINDINGS = (
     ((Change.INTRODUCED, Change.NEW_LINES), "fail", "introduced"),
+    ((Change.UNSTABLE,), "warn", Change.UNSTABLE.value),
     ((Change.FAILS_BASE_SKIPS,), "fail", "failed where the base skips"),
     ((Change.SKIPS,), "warn", "skipped where the base runs"),
     ((Change.UNREADABLE, Change.UNREADABLE_BASE), "warn", "unreadable"),
@@ -5344,14 +5403,15 @@ def day_of(cover: Cover | Unreadable | None) -> str:
 def applied_state(overview: Overview) -> str:
     """What its findings lines count, summed over its builds and their groups.
 
-    Then how many of them the series introduced: a line has no room for each.
+    Then how many of them the series introduced, and how many are unstable:
+    a line has no room for each.
     """
     found = [c for page in overview.builds for c in page.comparisons.values()]
     counts = findings_of(found)
     total = sum(count for _, count, _ in counts)
     said = [plural(len(found), "record"), plural(total, "finding")]
-    worst = FINDINGS[0][2]
-    said += [f"{count} {worst}" for _, count, meaning in counts if meaning == worst]
+    named = {FINDINGS[0][2], Change.UNSTABLE.value}
+    said += [f"{count} {meaning}" for _, count, meaning in counts if meaning in named]
     return ", ".join(said)
 
 

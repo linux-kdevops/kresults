@@ -527,6 +527,117 @@ class BaseMatching(unittest.TestCase):
         )
 
 
+def repeated(status: str, count: int, day: int, **extra: object) -> dict[str, object]:
+    """An entry run count times on day of November 2026; a failure prints e."""
+    found = entry(status, "e\n" if status == "fail" else "", **extra)
+    times = [
+        invocation(started=f"2026-11-{day:02}T{hour:02}:00:00Z")
+        for hour in range(count)
+    ]
+    return {**found, "invocations": times}
+
+
+class Unstable(unittest.TestCase):
+    """A test whose runs on one kernel passed and failed is no change."""
+
+    def compare(
+        self, mine: tuple[render.Record, ...], theirs: tuple[render.Record, ...]
+    ) -> render.Comparison:
+        series, base = (
+            dataclasses.replace(
+                tree({"blktests/t": render.representative(runs)}, commit),
+                runs={"blktests/t": runs},
+            )
+            for runs, commit in ((mine, "c"), (theirs, "base"))
+        )
+        return render.compare(series, base)["blktests/t"]
+
+    def test_either_side(self) -> None:
+        for name, mine, theirs, label in (
+            (
+                "both",
+                ran(repeated("fail", 2, 1), repeated("pass", 3, 2)),
+                ran(repeated("pass", 4, 1), repeated("fail", 1, 2)),
+                "unstable: series 3 pass, 2 fail; base 4 pass, 1 fail",
+            ),
+            (
+                "series",
+                ran(repeated("pass", 1, 1), repeated("fail", 2, 2)),
+                ran(repeated("pass", 5, 1)),
+                "unstable: series 1 pass, 2 fail; base 5 pass",
+            ),
+            (
+                "base",
+                ran(repeated("fail", 3, 1)),
+                ran(repeated("pass", 4, 1), repeated("fail", 1, 2)),
+                "unstable: series 3 fail; base 4 pass, 1 fail",
+            ),
+        ):
+            with self.subTest(unstable=name):
+                found = self.compare(mine, theirs)
+                self.assertEqual(
+                    (found.change, found.label, found.kind),
+                    (Change.UNSTABLE, label, "warn"),
+                )
+        # The diff of the two runs shown stays: the base's printed a line.
+        both = self.compare(
+            ran(repeated("fail", 2, 1), repeated("pass", 3, 2)),
+            ran(repeated("pass", 4, 1), repeated("fail", 1, 2)),
+        )
+        self.assertEqual((both.new, both.gone), (0, 1))
+        self.assertNotIn(Change.UNSTABLE, render.INTRODUCING)
+
+    def test_consistent(self) -> None:
+        passes, fails = ran(repeated("pass", 3, 1)), ran(repeated("fail", 2, 1))
+        self.assertEqual(self.compare(passes, fails).change, Change.FIXED)
+        self.assertEqual(self.compare(fails, passes).change, Change.INTRODUCED)
+        # Skips and errors take no part, nor runs of another command or .config.
+        a, b = "sha256:" + "a" * 64, "sha256:" + "b" * 64
+        two = ran(repeated("pass", 1, 1, config=a), repeated("fail", 1, 2, config=b))
+        self.assertEqual(self.compare(two, passes).change, Change.INTRODUCED)
+        skipped = ran(repeated("skip", 2, 1), repeated("pass", 1, 2))
+        erred = ran(repeated("error", 1, 1), repeated("fail", 1, 2))
+        self.assertEqual(self.compare(skipped, erred).change, Change.FIXED)
+        other = ran(
+            repeated("fail", 1, 1, command="make -s W=1"), repeated("pass", 3, 2)
+        )
+        self.assertEqual(self.compare(fails, other).change, Change.INTRODUCED)
+
+    def test_ran_differently(self) -> None:
+        mine = ran(repeated("pass", 1, 1), repeated("fail", 1, 2))
+        theirs = ran(
+            repeated("pass", 1, 1, command="make -s W=1"),
+            repeated("fail", 1, 2, command="make -s W=1"),
+        )
+        found = self.compare(mine, theirs)
+        self.assertEqual(
+            (found.change, found.label, found.notes),
+            (Change.UNSTABLE, "unstable: series 1 pass, 1 fail", ["ran differently"]),
+        )
+        steady = self.compare(ran(repeated("pass", 1, 1)), theirs)
+        self.assertEqual(steady.change, Change.FIXED)
+
+    def test_counted(self) -> None:
+        shown = ran(repeated("pass", 3, 1))[0]
+        self.assertEqual(shown.runs, 3)
+        self.assertEqual(dataclasses.replace(shown, runs=1), shown)
+        c = render.Comparison
+        comparisons = {"blktests/a": c(Change.UNSTABLE), "blktests/b": c(Change.FIXED)}
+        page = render.Page(tree({}), SERIES, None, comparisons)
+        self.assertEqual(
+            render.suite_findings(page),
+            '<span class="suite">blktests <b class="warn" title="1 unstable">1</b>'
+            ' <b class="pass" title="1 fixed">1</b></span>',
+        )
+        overview = render.Overview("p", "c", (page,))
+        self.assertEqual(
+            render.applied_state(overview), "2 records, 1 finding, 1 unstable"
+        )
+        self.assertIn("b: 1 unstable", render.build_summary(page))
+        facts = render.applied_facts(overview, SERIES)
+        self.assertIs(facts.outcome, render.Outcome.CLEAN)
+
+
 class Representative(unittest.TestCase):
     def test_latest_invocation(self) -> None:
         late = invocation(started="2026-11-10T12:00:00Z", seconds=9)

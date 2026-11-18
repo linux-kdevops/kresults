@@ -257,9 +257,10 @@ one project instead, a line each and the newest first, and writes nothing:
 The state is the one the index shows: ``fetched`` for a series nothing has
 applied, ``cannot apply``, or how many records an applied series has and
 how many findings the index counts in them against its
-:term:`base <Base>`, with how many of those it introduced. The date is that of
-the first message, in UTC. A run is recorded when it ends, so the listing
-has no series that is still running. ``--project NAME`` lists another
+:term:`base <Base>`, with how many of those it introduced and how many are
+unstable: tests whose runs on one kernel both passed and failed. The date is
+that of the first message, in UTC. A run is recorded when it ends, so the
+listing has no series that is still running. ``--project NAME`` lists another
 project than the one the site's root pages are of.
 
 On a terminal the fields stand in columns. Into a pipe they are apart by

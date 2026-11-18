@@ -73,6 +73,14 @@ About is Octicons', under MIT.
 - A series whose `.config` differs from its base's says so and shows
   the two files' diff. One base had been configured from older fragments
   and was compared all the same.
+- A test whose runs on one kernel both passed and failed is unstable,
+  neither fixed nor introduced. Each side counts the invocations of
+  what the series' last entry ran, under the `.config` of the entry
+  compared, and a skip or an error is neither a pass nor a fail. Where
+  the base ran something else, the series' runs alone decide. One
+  blktests test passed 3 times and failed twice on a series, and passed
+  4 times and failed once on its base. Set last run against last run,
+  it read as fixed.
 
 ### The pages
 
@@ -216,11 +224,11 @@ About is Octicons', under MIT.
   site, from the functions that fill the index: its order, a row's title
   and its state, which for an applied series is its findings lines'
   counts summed over its builds and their groups, then those it
-  introduced. Each group in its own words made one state 83 characters,
-  and every line as wide. A second program would read the tree its own
-  way, and the two would disagree. It prints columns to a
-  terminal and tabs to a pipe, and pages nothing: `less` does. Nothing
-  shows as running, since a run is recorded when it ends.
+  introduced and those unstable. Each group in its own words made one
+  state 83 characters, and every line as wide. A second program would
+  read the tree its own way, and the two would disagree. It prints
+  columns to a terminal and tabs to a pipe, and pages nothing: `less`
+  does. Nothing shows as running, since a run is recorded when it ends.
 - A string of a record reaches a terminal without its control and format
   characters. A record is not trusted, and a subject with an escape
   sequence would otherwise retitle the window or hide a line.
