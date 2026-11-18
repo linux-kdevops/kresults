@@ -43,7 +43,7 @@
             pkgs.python3
             pkgs.git
           ];
-          text = ''exec python3 ${./format}/record.py "$@"'';
+          text = ''exec python3 ${./format}/krecord.py "$@"'';
         };
         kseries = pkgs.writeShellApplication {
           name = "kseries";

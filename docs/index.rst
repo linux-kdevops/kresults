@@ -9,9 +9,9 @@ kresults
    :start-after: # kresults
    :end-before: <!-- docs/index.rst includes
 
-:src:`krecord <format/record.py>` files one run of a command,
-:src:`kseries <format/series.py>` names the commits of a series,
-:src:`kobjects <format/objects.py>` lists what a build compiles of one,
+:src:`krecord <format/krecord.py>` files one run of a command, names the
+commits of a series, lists what a build compiles of one and files the
+results of a blktests run, each by a subcommand.
 :src:`validate <format/validate.py>` checks a tree of :term:`records <Record>`,
 and :src:`krender <format/render.py>` writes one as a static site.
 :doc:`deploy` sets each up.

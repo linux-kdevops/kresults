@@ -4,21 +4,20 @@
 Deployment
 ==========
 
-The six programs are scripts under :src:`format`, each run from a clone
-or under its name on ``PATH``. They need `Python`_ 3.13 or later and `Git`_,
-and ``validate`` also needs `jsonschema`_ (``python3-jsonschema``).
+The three programs are scripts under :src:`format`, each run from a clone
+or under its name on ``PATH``: ``krecord`` writes records, ``validate``
+checks them and ``krender`` reads them. They need `Python`_ 3.13 or later
+and `Git`_, and ``validate`` also needs `jsonschema`_
+(``python3-jsonschema``).
 
 .. code-block:: console
 
    $ git clone https://github.com/linux-kdevops/kresults.git
    $ cd kresults
-   $ ln --symbolic --verbose "$PWD/format/record.py" ~/.local/bin/krecord
+   $ ln --symbolic --verbose "$PWD/format/krecord.py" ~/.local/bin/krecord
    $ ln --symbolic --verbose "$PWD/format/render.py" ~/.local/bin/krender
-   $ ln --symbolic --verbose "$PWD/format/series.py" ~/.local/bin/kseries
-   $ ln --symbolic --verbose "$PWD/format/objects.py" ~/.local/bin/kobjects
-   $ ln --symbolic --verbose "$PWD/format/blktests.py" ~/.local/bin/kblktests
 
-With `Nix`_, the flake installs all six and the units:
+With `Nix`_, the flake installs all three and the units:
 
 .. code-block:: console
 
@@ -32,6 +31,11 @@ Name your :term:`lab <Lab>` once, in lowercase letters, digits and ``-``:
 .. code-block:: console
 
    $ git config --global kresults.origin my-lab
+
+``krecord`` writes each kind of file by a subcommand: ``run``, ``series``,
+``objects`` and ``blktests``. Options with no subcommand are ``run``'s.
+``kseries``, ``kobjects`` and ``kblktests``, the names the last three had
+as programs of their own, still work until a later release.
 
 ``krecord`` files a :term:`record <Record>` of one run of a command. Run
 the command as a transient `systemd`_ user unit, in the tree, and name
@@ -93,17 +97,17 @@ A run the format cannot file leaves no record: ``krecord`` says why in one
 line and exits 0. That is a run with no lab named, outside a Git work
 tree, whose ``--config`` file is missing, or that a signal ended.
 
-``kseries`` writes the ``series.json`` of a range of commits. Run it at
+``krecord series`` writes the ``series.json`` of a range of commits. Run it at
 the top of the tree with their range, ``BASE..TIP``, or ``BASE..`` for the
 tree's ``HEAD``:
 
 .. code-block:: console
 
-   $ kseries --range v7.3..xfs-fix
+   $ krecord series --range v7.3..xfs-fix
 
 It names the base, the commits the base lacks and the files they change
-under the tip's directory, in place of the ``series.json`` ``krecord``
-left there. It takes ``--project`` and ``--records`` as ``krecord`` does,
+under the tip's directory, in place of the ``series.json`` ``krecord run``
+left there. It takes ``--project`` and ``--records`` as ``krecord run`` does,
 and exits 1 with the reason when the range names no such commits.
 
 For commits applied from a mailing list, ``--mbox`` names the thread
@@ -111,39 +115,39 @@ they were posted as, an mbox that ``b4 mbox`` wrote:
 
 .. code-block:: console
 
-   $ kseries --range v7.3.. --mbox cover.mbx
+   $ krecord series --range v7.3.. --mbox cover.mbx
 
 The series takes its Message-ID from the thread's first message, the one
 that answers no other, and its cover letter when that message is one. A
 file that does not exist names no message, so a producer may pass the
 option on every run. Neither does a thread left from another series,
-which ``kseries`` names on standard error: each commit's subject must be
+which ``krecord series`` names on standard error: each commit's subject must be
 that of a patch of the thread, at the revision of its first message.
-``kseries`` exits 1 on a file it cannot read, or whose Message-ID holds a
+``krecord series`` exits 1 on a file it cannot read, or whose Message-ID holds a
 ``/``.
 
-``kobjects`` writes the ``objects.json`` of one build of a series. Run it
-at the top of the tree once the build is done and ``kseries`` has named
+``krecord objects`` writes the ``objects.json`` of one build of a series. Run it
+at the top of the tree once the build is done and ``krecord series`` has named
 the series, with the ``.config`` and the configuration's name as
-``krecord`` takes them:
+``krecord run`` takes them:
 
 .. code-block:: console
 
-   $ kobjects --config build/.config --configuration defconfig
+   $ krecord objects --config build/.config --configuration defconfig
 
 It lists the objects the build compiles from the series' C files, and the
 C files it does not compile, beside the build's ``config``. It takes
-``--configuration-file``, ``--project`` and ``--records`` as ``krecord``
+``--configuration-file``, ``--project`` and ``--records`` as ``krecord run``
 does, and exits 1 with the reason when the commit has no series or the
 build is not finished.
 
-``kblktests`` files the results of a `blktests`_ run, one record for
+``krecord blktests`` files the results of a `blktests`_ run, one record for
 each test. Run it at the top of the tree of the kernel that ran, with
-the directory the run wrote and the build as ``krecord`` takes it:
+the directory the run wrote and the build as ``krecord run`` takes it:
 
 .. code-block:: console
 
-   $ kblktests --results results --config build/.config \
+   $ krecord blktests --results results --config build/.config \
        --configuration defconfig --producer NAME --producer-version 1
 
 The directory holds ``machine/``, the facts of the machine under test,
