@@ -96,6 +96,15 @@ About is Octicons', under MIT.
   "ran differently" points at tools no page names. A `url` is no part
   of what an entry ran, so an entry with one still matches a base's
   without.
+- A build's page has a section per tool, in the order the tools first
+  ran: each is placed by the earliest start of any invocation of its
+  records there, the series' where it has any and else the base's. Two
+  that started together come by name, and a tool with no record that
+  could be read comes last. The page then reads as the work went:
+  configure, build, checks, tests. By name, the configure comes after
+  the tests that ran on its kernel, and a list of tools in the code
+  needs a line for each new one. The findings line and the report keep
+  the same order.
 - A series' output and its base's open in place, by checkboxes that the
   stylesheet reads. Reading either used to mean leaving the diff.
 - The index lists each series once, newest first by the cover letter's

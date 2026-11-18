@@ -761,6 +761,8 @@ class Record:
     seconds: int = 0
     # When its latest invocation started, in UTC: 2026-11-10T09:12:03Z.
     started: str = ""
+    # When its first invocation started.
+    first: str = ""
     producer: Producer | None = None
     host: Host | None = None
     # The lab of its latest invocation, the producer's name of that run, and
@@ -1164,7 +1166,8 @@ def parse_entry(data: object, subject: Subject | None = None) -> Record:
     except ValueError as error:
         raise RecordError("status is not pass, fail, skip or error") from error
     seen = items(fields, "invocations", empty=False)
-    last = latest(list(map(parse_invocation, seen)), lambda invoked: invoked.started)
+    invoked = list(map(parse_invocation, seen))
+    last = latest(invoked, lambda invocation: invocation.started)
     return Record(
         status=status,
         exit=want(fields, "exit", int, "an integer"),
@@ -1175,6 +1178,7 @@ def parse_entry(data: object, subject: Subject | None = None) -> Record:
         config=optional(fields, "config", str, "a string"),
         seconds=last.seconds,
         started=last.started,
+        first=min(invocation.started for invocation in invoked),
         producer=last.producer,
         host=last.host,
         origin=last.origin,
@@ -2240,10 +2244,25 @@ def suite_of(key: str) -> str:
     return key.partition("/")[0]
 
 
-def suites(keys: Iterable[str]) -> list[str]:
-    """The tools of keys, make first, then by name."""
+def began(tree: Tree) -> dict[str, str]:
+    """Per tool, when the first invocation of any of tree's records of it started."""
+    found: dict[str, str] = {}
+    for key, entries in tree.runs.items():
+        first = min(entry.first for entry in entries)
+        found[suite_of(key)] = min(first, found.get(suite_of(key), first))
+    return found
+
+
+def suites(page: Page) -> list[str]:
+    """A page's tools in the order their work began, then by name.
+
+    A tool is placed by the series' records of it, or by the base's where
+    the series has none; one with no record that could be read comes last.
+    """
+    at = {**(began(page.base) if page.base else {}), **began(page.tree)}
+    keys = page.comparisons if page.series else page.tree.records
     names = {suite_of(key) for key in keys}
-    return sorted(names, key=lambda name: (name != MAKE, name))
+    return sorted(names, key=lambda name: (name not in at, at.get(name, ""), name))
 
 
 def stamp(when: datetime) -> str:
@@ -2567,7 +2586,7 @@ def suite_findings(page: Page) -> str:
         return muted("not set against a base")
     reconfigured = page.configured is Configured.DIFFERENT
     found = [badge("warn", Configured.DIFFERENT.value)] if reconfigured else []
-    for name in suites(page.comparisons):
+    for name in suites(page):
         mine = [c for key, c in page.comparisons.items() if suite_of(key) == name]
         counts = Counter(comparison.change for comparison in mine)
         new, gone = Counter[Unit](), Counter[Unit]()
@@ -3495,7 +3514,7 @@ def suite_outcomes(applied: Iterable[Overview]) -> dict[str, tuple[int, int]]:
                 found[name] = found.get(name, False) or bad
         checked.update(found.keys())
         introduced.update(name for name, bad in found.items() if bad)
-    return {name: (checked[name], introduced[name]) for name in suites(checked)}
+    return {name: (checked[name], introduced[name]) for name in sorted(checked)}
 
 
 def verdicts(entries: Iterable[Entry]) -> Counter[str]:
@@ -4821,7 +4840,7 @@ def tree_page(page: Page, footer: str) -> str:
             if suite_of(key) == name
         )
         + "</div></section>"
-        for name in suites(keys)
+        for name in suites(page)
     )
     body = back_link(root, tree.project, tree.commit, "index.html") + head + sections
     return html_page(title, root, body, footer)
@@ -5088,7 +5107,8 @@ def report_head(
 def report_sections(page: Page, address: str | None, seen: dict[str, str]) -> list[str]:
     """A section per record the series introduced, or added lines to, in a build.
 
-    Its anchor is the build page's, which anchors() keeps by the keys alone.
+    They come by tool in the order of the build's page, as suites() gives
+    it. Its anchor is that page's, which anchors() keeps by the keys alone.
     The first check of the configured build, not of the series alone,
     fetches the build's .config. seen is as quoted() keeps it.
     """
@@ -5096,7 +5116,9 @@ def report_sections(page: Page, address: str | None, seen: dict[str, str]) -> li
     page_url = public(address, *page.tree.parts, "index.html") if address else None
     fetch = build_config(page, address)
     sections: list[str] = []
-    for key, comparison in page.comparisons.items():
+    order = suites(page)
+    for key in sorted(page.comparisons, key=lambda key: order.index(suite_of(key))):
+        comparison = page.comparisons[key]
         record = page.tree.records.get(key)
         if comparison.change not in INTRODUCING or not isinstance(record, Record):
             continue

@@ -1286,14 +1286,14 @@ class Findings(unittest.TestCase):
         page = render.Page(tree({}), SERIES, None, comparisons)
         self.assertEqual(
             render.suite_findings(page),
-            f'<span class="suite">make {CHECK}'
-            ' <span class="muted" title="2 lines gone">\u22122</span></span>'
-            ' <span class="suite">checkpatch.pl'
+            '<span class="suite">checkpatch.pl'
             ' <b class="warn" title="1 unreadable">1</b></span>'
             ' <span class="suite">fstests'
             ' <span class="muted" title="1 line new">+1</span></span>'
             ' <span class="suite">kernel-doc'
             ' <b class="error" title="1 with no verdict">1</b></span>'
+            f' <span class="suite">make {CHECK}'
+            ' <span class="muted" title="2 lines gone">\u22122</span></span>'
             ' <span class="suite">sparse <b class="fail" title="2 introduced">2</b>'
             ' <b class="none" title="1 without a base record">1</b>'
             ' <b class="pass" title="1 fixed">1</b>'
@@ -2349,8 +2349,35 @@ class Layout(unittest.TestCase):
             ],
         )
         self.assertEqual(tree.config, b"CONFIG_64BIT=y\n")
-        self.assertEqual(render.suites(tree.records), ["make", "fstests", "sparse"])
-        self.assertEqual(render.suites(commit_tree.records), ["make", "checkpatch.pl"])
+        # Started together, so by name.
+        commit_page, page = render.pages_of([commit_tree, tree])
+        self.assertEqual(render.suites(page), ["fstests", "make", "sparse"])
+        self.assertEqual(render.suites(commit_page), ["checkpatch.pl", "make"])
+
+    def test_suites(self) -> None:
+        def at(hour: int) -> str:
+            return f"2026-11-10T{hour:02}:00:00Z"
+
+        base = self.records.joinpath("linux", "v1", B)
+        series = self.records.joinpath("linux", "s", B)
+        put(series.parent.parent.parent / "series.json", series_json(commit()))
+        # Run again after every other tool: its first invocation places it.
+        again = [invocation(started=at(9)), invocation(started=at(20))]
+        configured = {**record(), "entries": [{**entry(), "invocations": again}]}
+        put(series / "merge_config.sh.json", configured)
+        for key, hour in (("make/all", 10), ("sparse/a.o", 11), ("blktests/x", 11)):
+            put(series / f"{key}.json", record(started=at(hour)))
+        # The base's make started before any of the series', its kunit too.
+        for key, hour in (("make/all", 6), ("kunit/x", 7)):
+            put(base / f"{key}.json", record(started=at(hour)))
+        output = self.dir / "public"
+        render.make_site(self.records, output)
+        for name, order in (
+            ("s", ["kunit", "merge_config.sh", "make", "blktests", "sparse"]),
+            ("v1", ["make", "kunit"]),
+        ):
+            page = output.joinpath("linux", name, B, "index.html").read_text()
+            self.assertEqual(re.findall(r"<h2>([^<]+)</h2><div>", page), order)
 
     def test_history(self) -> None:
         for path, key in (
