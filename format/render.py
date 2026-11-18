@@ -12,6 +12,12 @@ A commit whose series.json lists commits is a series, set against its
 base's records of the same build, and any other commit is a base.
 
     render.py --records ../records --output public
+
+With --list in place of --output, print the series of one project, a line
+each and the newest first, and write no site: in columns on a terminal, and
+with a header and tabs between the fields into a pipe.
+
+    render.py --records ../records --list [--project NAME]
 """
 
 import argparse
@@ -26,6 +32,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import unicodedata
 from collections import Counter
 from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -2936,16 +2943,23 @@ def unapplied_title(item: Unapplied) -> str:
     return item.name
 
 
-def applied_html(item: Unapplied) -> str:
-    """Its finding: fetched, cannot apply when the record failed, else its own."""
+def state_of(item: Unapplied) -> tuple[str, str]:
+    """Its finding, as a badge's kind and words.
+
+    Fetched, cannot apply when the record failed, else the record's own.
+    """
     entry = item.record
     if item.fetched:
-        return badge("none", "fetched")
+        return "none", "fetched"
     if isinstance(entry, Unreadable):
-        return badge(Change.UNREADABLE.kind, Change.UNREADABLE.value)
+        return Change.UNREADABLE.kind, Change.UNREADABLE.value
     if entry.status is Status.FAILED:
-        return badge("fail", "cannot apply")
-    return verdict(entry)
+        return "fail", "cannot apply"
+    return verdict_of(entry)
+
+
+def applied_html(item: Unapplied) -> str:
+    return badge(*state_of(item))
 
 
 def unapplied_row(item: Unapplied, marks: Marks) -> str:
@@ -4548,12 +4562,16 @@ series on it is set against them.</p></section>
 """
 
 
-def verdict(record: Record) -> str:
-    """Its verdict, coloured as its class in style.css, and the exit status."""
+def verdict_of(record: Record) -> tuple[str, str]:
+    """Its verdict's class in style.css, and its words with the exit status."""
     status = record.status.value
     if record.status is Status.SKIPPED:
-        return badge("none", status)
-    return badge(status, f"{status}, exit {record.exit}")
+        return "none", status
+    return status, f"{status}, exit {record.exit}"
+
+
+def verdict(record: Record) -> str:
+    return badge(*verdict_of(record))
 
 
 type Cites = Callable[[str, str], str | None]
@@ -5308,6 +5326,112 @@ def replace(staging: Path, output: Path) -> None:
     shutil.rmtree(old)
 
 
+# The listing: a project's series as lines of text, for a terminal or a pipe.
+LISTED = ("STATE", "DATE", "PATCHES", "MESSAGE-ID", "SUBJECT")
+
+
+def plain(text: str) -> str:
+    """A recorded string less the characters that steer a terminal."""
+    # Every control and format character, a tab and a line's end with them.
+    return "".join(c for c in text if unicodedata.category(c)[0] != "C")
+
+
+def day_of(cover: Cover | Unreadable | None) -> str:
+    when = posted(cover)
+    return when.astimezone(UTC).strftime("%Y-%m-%d") if when else ""
+
+
+def applied_state(overview: Overview) -> str:
+    """What its findings lines count, summed over its builds and their groups.
+
+    Then how many of them the series introduced: a line has no room for each.
+    """
+    found = [c for page in overview.builds for c in page.comparisons.values()]
+    counts = findings_of(found)
+    total = sum(count for _, count, _ in counts)
+    said = [plural(len(found), "record"), plural(total, "finding")]
+    worst = FINDINGS[0][2]
+    said += [f"{count} {worst}" for _, count, meaning in counts if meaning == worst]
+    return ", ".join(said)
+
+
+def listing(site: Site) -> list[tuple[str, ...]]:
+    """The series of site, a project's, in its index's order: each line's fields."""
+    found: list[tuple[Order, tuple[str, ...]]] = []
+    for overview in site.overviews:
+        if series := overview.series:
+            cover = overview.cover
+            when = recorded_when(page.tree for page in overview.builds)
+            fields = (applied_state(overview), day_of(cover), str(len(series.commits)))
+            fields += (series.message_id, index_title(cover, series))
+            found.append((row_order(cover, when, overview.parts), fields))
+    for item in site.unapplied:
+        cover = item.cover
+        patches = str(cover.patches) if isinstance(cover, Cover) else ""
+        fields = (state_of(item)[1], day_of(cover), patches, item.name)
+        when = item.recorded.when if item.recorded else None
+        fields += (unapplied_title(item),)
+        found.append((row_order(cover, when, item.parts), fields))
+    rows = [fields for _, fields in sorted(found, key=lambda pair: pair[0])]
+    return [tuple(plain(field) or "-" for field in fields) for fields in rows]
+
+
+def list_text(rows: Sequence[tuple[str, ...]], *, aligned: bool) -> str:
+    """The listing under its header: in columns, or its fields apart by tabs."""
+    table = [LISTED, *rows]
+    if not aligned:
+        return "".join("\t".join(row) + "\n" for row in table)
+    # The subject comes last and takes what a line has left.
+    widths = [max(map(len, column)) for column in zip(*table, strict=True)][:-1]
+    return "".join(
+        "  ".join([*(f.ljust(w) for f, w in zip(row, widths, strict=False)), row[-1]])
+        + "\n"
+        for row in table
+    )
+
+
+def print_list(site: Site, project: str | None) -> None:
+    """Print the series of a project of site, by default the root pages'."""
+    parts = project_sites(site)
+    # The root pages are those of the project whose listings take no prefix.
+    chosen = [p for p in parts if (p.project == project if project else not p.page(""))]
+    if not chosen:
+        raise RenderError(f"--project {project} has no record")
+    text = list_text(listing(chosen[0]), aligned=sys.stdout.isatty())
+    try:
+        sys.stdout.write(text)
+        sys.stdout.flush()
+    except BrokenPipeError:
+        # A pager that quit reads no more: leave nothing for exit to flush.
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+
+
+def load_site(
+    records: Path,
+    epoch: int | None = None,
+    revision: str | None = None,
+    address: str | None = None,
+) -> Site:
+    """Everything the records hold, or RenderError of a tree no site can show."""
+    git = git_of(records)
+    history = history_of(git, records) if git else {}
+    trees = fold_earlier(load(records, history))
+    unapplied = load_unapplied(records, history, trees)
+    named = {tree.project for tree in trees} | {item.project for item in unapplied}
+    if clash := sorted(n for n in named if own_file(n, named)):
+        raise RenderError(f"a project named {clash[0]} would overwrite the site's own")
+    if clash := sorted({t.parts[2] for t in trees} & {"index.html", REPORT}):
+        raise RenderError(f"a build under {clash[0]} would overwrite its commit's")
+    return Site(
+        overviews_of(pages_of(trees)),
+        unapplied,
+        footer_text(head_of(git, records) if git else None, epoch),
+        dated=git is not None,
+        revision=revision,
+        address=address,
+    )
+
+
 def make_site(
     records: Path,
     output: Path,
@@ -5318,23 +5442,7 @@ def make_site(
     """Write the site into output; on RenderError, nothing is written."""
     if reason := refusal(records, output):
         raise RenderError(reason)
-    git = git_of(records)
-    history = history_of(git, records) if git else {}
-    trees = fold_earlier(load(records, history))
-    unapplied = load_unapplied(records, history, trees)
-    named = {tree.project for tree in trees} | {item.project for item in unapplied}
-    if clash := sorted(n for n in named if own_file(n, named)):
-        raise RenderError(f"a project named {clash[0]} would overwrite the site's own")
-    if clash := sorted({t.parts[2] for t in trees} & {"index.html", REPORT}):
-        raise RenderError(f"a build under {clash[0]} would overwrite its commit's")
-    site = Site(
-        overviews_of(pages_of(trees)),
-        unapplied,
-        footer_text(head_of(git, records) if git else None, epoch),
-        dated=git is not None,
-        revision=revision,
-        address=address,
-    )
+    site = load_site(records, epoch, revision, address)
     parent = output.absolute().parent
     parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=f".{output.name}.", dir=parent))
@@ -5396,7 +5504,13 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--records", type=Path, required=True, metavar="DIR")
-    parser.add_argument("--output", type=Path, required=True, metavar="DIR")
+    parser.add_argument("--output", type=Path, metavar="DIR")
+    parser.add_argument(
+        "--list", action="store_true", help="print a project's series and write no site"
+    )
+    parser.add_argument(
+        "--project", metavar="NAME", help="the project --list prints the series of"
+    )
     parser.add_argument(
         "--revision", metavar="REV", help="the revision of render the site names"
     )
@@ -5405,7 +5519,9 @@ def main() -> None:
     )
     args = parser.parse_args()
     records: Path = args.records
-    output: Path = args.output
+    output: Path | None = args.output
+    if args.list == (output is not None):
+        parser.error("give --output, for a site, or --list, and not both")
     address: str | None = args.url
     if address is not None and web_link(address) is None:
         parser.error(f"--url {address} is not an http or https URL")
@@ -5416,7 +5532,10 @@ def main() -> None:
         parser.error("SOURCE_DATE_EPOCH is not a whole number of seconds")
     try:
         revision: str | None = args.revision
-        make_site(records, output, int(epoch) if epoch else None, revision, address)
+        if output is None:
+            print_list(load_site(records), args.project)
+        else:
+            make_site(records, output, int(epoch) if epoch else None, revision, address)
     except RenderError as error:
         sys.exit(f"render: {error}")
 

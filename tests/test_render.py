@@ -4372,5 +4372,96 @@ class Format(unittest.TestCase):
         self.assertTrue((self.output / test_validate.COMMIT / render.REPORT).is_file())
 
 
+# When three series were posted, a day apart.
+DATES = tuple(f"{day} Mar 2026 10:00:00 +0000" for day in (2, 3, 4))
+
+
+# What the index's findings line counts of a series that makes sparse fail.
+INTRODUCES = "2 records, 1 finding, 1 introduced"
+
+
+class Listing(unittest.TestCase):
+    """--list prints a project's series as its index has them, and writes no site."""
+
+    def setUp(self) -> None:
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.records = self.dir / "records"
+        base_build(self.records)
+        add_series(self.records, "built", letter("[PATCH 0/1] built", DATES[2]))
+        for name, status in (("v1", "pass"), ("built", "fail")):
+            sparse = self.records.joinpath("linux", name, B, "sparse", "x.json")
+            put(sparse, record(status))
+        add_series(self.records, "local", None)
+        unapplied(self.records, "fetched@x", "b4/mbox", record(env={}))
+        hostile = "[PATCH v2 0/3] a\x1b[31m\tred\u202e\x07 one\nSTATE"
+        post(self.records, "fetched@x", letter(hostile, DATES[1]))
+        unapplied(self.records, "refused@x", "b4/shazam", record("fail"))
+        post(self.records, "refused@x", letter("[PATCH] refused", DATES[0]))
+        unapplied(self.records, "bare@x", "b4/mbox", record("fail"))
+        put(self.records.joinpath("qemu", "v2", "configure.json"), record())
+
+    def run_list(self, *options: str, status: int = 0) -> tuple[str, str]:
+        """Run render with --list, and return what it printed and what it said."""
+        argv = [sys.executable, render.__file__, "--records", str(self.records)]
+        done = subprocess.run(  # noqa: S603
+            [*argv, *options], capture_output=True, check=False, text=True
+        )
+        self.assertEqual(done.returncode, status, done.stderr)
+        return done.stdout, done.stderr
+
+    def test_a_line_for_each_series_newest_first(self) -> None:
+        printed, _ = self.run_list("--list")
+        self.assertEqual(
+            printed.splitlines(),
+            [
+                "STATE\tDATE\tPATCHES\tMESSAGE-ID\tSUBJECT",
+                f"{INTRODUCES}\t2026-03-04\t1\tbuilt@x\t[PATCH 0/1] built",
+                "fetched\t2026-03-03\t3\tfetched@x\t[PATCH v2 0/3] a[31mred oneSTATE",
+                "cannot apply\t2026-03-02\t1\trefused@x\t[PATCH] refused",
+                "cannot apply\t-\t-\tbare@x\tbare@x",
+                "2 records, 1 finding\t-\t1\t-\tlocal",
+            ],
+        )
+        # What the listing says of a series is what its row of the index does.
+        render.make_site(self.records, self.dir / "public")
+        index = (self.dir / "public" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('<b class="fail" title="1 introduced">1</b>', index)
+        self.assertEqual(index.count("<tr data-search"), 5)
+        self.assertFalse((self.dir / "site").exists())
+
+    def test_columns_on_a_terminal(self) -> None:
+        rows = [
+            ("fetched", "2026-03-03", "3", "m@x", "[PATCH 0/3] a topic"),
+            ("12 records, 1 introduced", "-", "1", "-", "t"),
+        ]
+        self.assertEqual(
+            render.list_text(rows, aligned=True).splitlines(),
+            [
+                f"{'STATE':24}  {'DATE':10}  PATCHES  MESSAGE-ID  SUBJECT",
+                f"{'fetched':24}  2026-03-03  3        m@x         [PATCH 0/3] a topic",
+                f"12 records, 1 introduced  {'-':10}  1        -           t",
+            ],
+        )
+        site = render.project_sites(render.load_site(self.records))[0]
+        for line in render.list_text(render.listing(site), aligned=True).splitlines():
+            self.assertTrue(line.isprintable(), line)
+
+    def test_another_project(self) -> None:
+        put(self.records / "qemu" / "v2-1-gq" / "configure.json", record())
+        series = series_json(commit("q"), base_name="v2")
+        put(self.records / "qemu" / "v2-1-gq" / "series.json", series)
+        printed, _ = self.run_list("--list", "--project", "qemu")
+        self.assertEqual(printed.splitlines()[1:], ["1 record, 0 findings\t-\t1\t-\tq"])
+        _, said = self.run_list("--list", "--project", "none", status=1)
+        self.assertEqual(said, "render: --project none has no record\n")
+
+    def test_a_site_or_a_list(self) -> None:
+        for options in ((), ("--list", "--output", str(self.dir / "site"))):
+            _, said = self.run_list(*options, status=2)
+            self.assertIn("give --output, for a site, or --list, and not both", said)
+        self.assertFalse((self.dir / "site").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

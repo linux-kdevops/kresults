@@ -243,6 +243,35 @@ that reads the same with no script:
 Rendering again into the same ``--output`` replaces the site. Its About
 page says how to read it.
 
+``--list`` in place of ``--output`` prints the :term:`series <Series>` of
+one project instead, a line each and the newest first, and writes nothing:
+
+.. code-block:: console
+
+   $ krender --records ~/.local/state/krecords --list
+   STATE                    DATE        PATCHES  MESSAGE-ID     SUBJECT
+   fetched                  2026-11-18  1        a@example.org  [PATCH] nvme: a
+   cannot apply             2026-11-17  5        b@example.org  [PATCH v2 0/5] b
+   9 records, 2 findings    2026-11-15  2        c@example.org  nvme: c
+
+The state is the one the index shows: ``fetched`` for a series nothing has
+applied, ``cannot apply``, or how many records an applied series has and
+how many findings the index counts in them against its
+:term:`base <Base>`, with how many of those it introduced. The date is that of
+the first message, in UTC. A run is recorded when it ends, so the listing
+has no series that is still running. ``--project NAME`` lists another
+project than the one the site's root pages are of.
+
+On a terminal the fields stand in columns. Into a pipe they are apart by
+tabs, under the same header, so a pager shows them ragged unless
+:cmd:`column` lines them up first:
+
+.. code-block:: console
+
+   $ krender --records ~/.local/state/krecords --list \
+       | column --table --separator "$(printf '\t')" \
+       | less --chop-long-lines
+
 Serving a site
 ==============
 

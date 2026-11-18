@@ -212,6 +212,18 @@ About is Octicons', under MIT.
   `~/.local/state/krecords`. Named for a tree by its escaped path, they
   put `systemd-escape` in every command for a second tree that no one
   kept. Another tree is a drop-in.
+- `--list` prints a project's series as lines of text and writes no
+  site, from the functions that fill the index: its order, a row's title
+  and its state, which for an applied series is its findings lines'
+  counts summed over its builds and their groups, then those it
+  introduced. Each group in its own words made one state 83 characters,
+  and every line as wide. A second program would read the tree its own
+  way, and the two would disagree. It prints columns to a
+  terminal and tabs to a pipe, and pages nothing: `less` does. Nothing
+  shows as running, since a run is recorded when it ends.
+- A string of a record reaches a terminal without its control and format
+  characters. A record is not trusted, and a subject with an escape
+  sequence would otherwise retitle the window or hide a line.
 - A path unit sees a change in the directory it watches and none below
   it, and records lie several levels down. Whatever writes a record
   touches the top of the tree afterwards, as `krecord` does, and that is

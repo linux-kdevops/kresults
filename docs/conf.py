@@ -73,6 +73,7 @@ html_context = {
 # is the one place a command's URL is written, so every page links a name the
 # same way.
 cmd_links = {
+    "column": "https://man7.org/linux/man-pages/man1/column.1.html",
     "git": "https://git-scm.com/docs/git",
     "journalctl": "https://www.freedesktop.org/software/systemd/man/latest/journalctl.html",
     "nix": "https://nix.dev/manual/nix/latest/command-ref/new-cli/nix",
