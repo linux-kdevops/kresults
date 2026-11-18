@@ -44,7 +44,16 @@ PRODUCER = {"name": "kdevops-ng", "version": "30335b9"}
 STARTED = "2026-11-10T09:12:03Z"
 # The fields record() puts in the invocation, and in the subject.
 INVOKED = frozenset(
-    {"producer", "origin", "run", "started", "seconds", "machine", "resources"}
+    {
+        "producer",
+        "origin",
+        "run",
+        "started",
+        "seconds",
+        "machine",
+        "resources",
+        "metrics",
+    }
 )
 SUBJECT = frozenset({"file", "test", "range", "commit", "build"})
 # B as a subject or an objects.json names it.
@@ -4054,6 +4063,114 @@ class Resources(unittest.TestCase):
         ):
             with self.subTest(count=count):
                 self.assertEqual(render.bytes_text(count), text)
+
+
+def sampled(*runs: Mapping[str, float], job: str | None = None) -> render.Record:
+    """A benchmark's entry with an invocation per run, each its metrics by name.
+
+    iops is better higher and any other lower.
+    """
+    found = entry(command="fio a.fio", **({"job": job} if job else {}))
+    found["invocations"] = [
+        invocation(
+            started=f"2026-11-10T09:12:{second:02}Z",
+            metrics=[
+                {
+                    "name": name,
+                    "value": value,
+                    "unit": "1/s" if name == "iops" else "",
+                    "better": "higher" if name == "iops" else "lower",
+                }
+                for name, value in run.items()
+            ],
+        )
+        for second, run in enumerate(runs)
+    ]
+    return render.parse_entry(found)
+
+
+class Metrics(unittest.TestCase):
+    def rows(self, now: render.Record, then: render.Record | None) -> list[list[str]]:
+        """The cells of each row of the table of now, a series', set against then."""
+        comparison = render.compare_entry(now, then)
+        if then is not None:
+            self.assertIs(comparison.change, Change.PASSES_ON_BOTH)
+        table = render.metrics_html(now, comparison, series=True)
+        body = table.partition("<tbody>")[2]
+        return [
+            re.findall(r"<td[^>]*>(.*?)</td>", row) for row in body.split("</tr>")[:-1]
+        ]
+
+    def test_ranges_that_overlap_are_within_noise(self) -> None:
+        base = sampled({"iops": 100}, {"iops": 120}, {"iops": 110.5})
+        series = sampled({"iops": 130}, {"iops": 115}, {"iops": 125})
+        noise = '<span class="muted">within noise</span>'
+        row = ["iops (1/s)", "110.5 (100..120, 3)", "125 (115..130, 3)", "1.13", noise]
+        self.assertEqual(self.rows(series, base), [row])
+
+    def test_ranges_apart_are_better_or_worse(self) -> None:
+        base = sampled(*({"iops": n, "errors": n} for n in (100, 110, 120)))
+        series = sampled(*({"iops": n, "errors": n} for n in (121, 140, 130)))
+        better = '<span class="badge pass">better</span>'
+        worse = '<span class="badge fail">worse</span>'
+        self.assertEqual(
+            self.rows(series, base),
+            [
+                [
+                    "iops (1/s)",
+                    "110 (100..120, 3)",
+                    "130 (121..140, 3)",
+                    "1.18",
+                    better,
+                ],
+                ["errors", "110 (100..120, 3)", "130 (121..140, 3)", "1.18", worse],
+            ],
+        )
+        # The other way round, each mark is the other.
+        marks = [row[-1] for row in self.rows(base, series)]
+        self.assertEqual(marks, [worse, better])
+
+    def test_two_samples_a_side_have_no_mark(self) -> None:
+        base = sampled({"iops": 100}, {"iops": 110}, {"iops": 120})
+        series = sampled({"iops": 200}, {"iops": 210})
+        row = ["iops (1/s)", "110 (100..120, 3)", "205 (200..210, 2)", "1.86", ""]
+        self.assertEqual(self.rows(series, base), [row])
+
+    def test_a_base_without_the_numbers(self) -> None:
+        series = sampled({"iops": 200}, {"<b>": 0})
+        none = '<span class="muted">none</span>'
+        expected = [
+            ["iops (1/s)", none, "200 (200..200, 1)", "", ""],
+            ["&lt;b&gt;", none, "0 (0..0, 1)", "", ""],
+        ]
+        self.assertEqual(self.rows(series, None), expected)
+        # A base that ran another job measured something else.
+        base = sampled({"iops": 100}, job="sha256:" + "1" * 64)
+        comparison = render.compare_entry(series, base)
+        self.assertTrue(comparison.ran_differently)
+        self.assertEqual(comparison.against, ())
+
+    def test_a_base_shows_its_samples_alone(self) -> None:
+        table = render.metrics_html(
+            sampled({"iops": 1}, {"iops": 3}), None, series=False
+        )
+        self.assertIn('<th>Metric</th><th class="num">Samples</th>', table)
+        self.assertIn('<td>iops (1/s)</td><td class="num">2 (1..3, 2)</td>', table)
+        self.assertEqual(render.metrics_html(parsed(), None, series=False), "")
+
+    def test_a_metric_that_is_none(self) -> None:
+        good = {"name": "iops", "value": 1, "unit": "", "better": "higher"}
+        for field, value in (
+            ("value", True),
+            ("value", "1"),
+            ("value", float("nan")),
+            ("value", 10**400),
+            ("better", "more"),
+            ("unit", None),
+        ):
+            with self.subTest(field=field, value=value):
+                found = entry(metrics=[{**good, field: value}])
+                self.assertRaises(render.RecordError, render.parse_entry, found)
 
 
 class Format(unittest.TestCase):

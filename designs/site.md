@@ -152,6 +152,16 @@ About is Octicons', under MIT.
   refused it. A producer that watches a mailing list files more series
   than it builds, and a row was the only way to learn that one waits.
   Its page's Thread is the Message-ID a task takes.
+- An entry whose runs measured numbers has a table under its run, a row
+  for each metric: the base's samples and the series', each as their
+  median, their range and their count, and the ratio of the medians. A
+  row says `better` or `worse` only where the two ranges do not overlap
+  and each side has three samples or more. Where they overlap it says
+  within noise, and with fewer samples nothing: two runs of one kernel
+  differ, and one sample a side would call that a change. The base's
+  samples are those of its entry that ran the same job. No verdict comes
+  of a number: a record's status says its benchmark ran, and the counts
+  of a page are of statuses.
 - A whole row is a link. Safari positions no table row, so the link's
   box is each cell and not the row.
 - The series table has a fixed layout with one set of column widths. A

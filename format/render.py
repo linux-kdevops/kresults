@@ -40,6 +40,7 @@ from enum import Enum
 from html import escape
 from itertools import groupby, pairwise, takewhile
 from pathlib import Path
+from statistics import median
 from typing import TypeIs
 from urllib.parse import quote, unquote, urlsplit
 
@@ -728,6 +729,16 @@ def resources_text(figures: Sequence[Figure]) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class Metric:
+    """One number a run measured, and whether a higher one is better."""
+
+    name: str
+    value: float
+    unit: str
+    higher: bool
+
+
+@dataclass(frozen=True, slots=True)
 class Invocation:
     """Who ran an entry's command, where, when, for how long and on what."""
 
@@ -740,6 +751,7 @@ class Invocation:
     host: Host
     # What the run took, as its resources give it, in the schema's order.
     resources: tuple[Figure, ...] = ()
+    metrics: tuple[Metric, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -758,6 +770,10 @@ class Record:
     tools: tuple[Tool, ...] = ()
     # "sha256:" and the hash of the .config the command ran under, or None.
     config: str | None = None
+    # The same of the job file a benchmark ran, or None.
+    job: str | None = None
+    # What every invocation measured, the oldest first: a benchmark's samples.
+    metrics: tuple[Metric, ...] = ()
     seconds: int = 0
     # When its latest invocation started, in UTC: 2026-11-10T09:12:03Z.
     started: str = ""
@@ -778,9 +794,9 @@ class Record:
     series_check: bool = False
 
     @property
-    def ran(self) -> tuple[tuple[Tool, ...], str, tuple[tuple[str, str], ...]]:
+    def ran(self) -> tuple[object, ...]:
         """What it ran, which a base's entry must equal to be set against it."""
-        return self.tools, self.command, tuple(sorted(self.env))
+        return self.tools, self.command, tuple(sorted(self.env)), self.job
 
     @property
     def command_line(self) -> str:
@@ -1086,6 +1102,22 @@ def parse_resources(data: object) -> tuple[Figure, ...]:
     return tuple(found)
 
 
+def parse_metric(data: object) -> Metric:
+    fields = json_object(data, "a metric is not a JSON object")
+    value = member(fields, "value")
+    better = want(fields, "better", str, "a string")
+    try:
+        number = float(value) if isinstance(value, int | float) else math.nan
+    except OverflowError:
+        number = math.nan
+    if isinstance(value, bool) or not math.isfinite(number):
+        raise RecordError("a metric's value is not a number")
+    if better not in {"higher", "lower"}:
+        raise RecordError("a metric's better is neither higher nor lower")
+    name, unit = (want(fields, field, str, "a string") for field in ("name", "unit"))
+    return Metric(name, number, unit, better == "higher")
+
+
 def parse_invocation(data: object) -> Invocation:
     fields = json_object(data, "an invocation is not a JSON object")
     producer = json_object(member(fields, "producer"), "producer is not a JSON object")
@@ -1106,6 +1138,11 @@ def parse_invocation(data: object) -> Invocation:
             memory=want(machine, "memory", int, "an integer"),
         ),
         resources=parse_resources(fields["resources"]) if "resources" in fields else (),
+        metrics=(
+            tuple(map(parse_metric, items(fields, "metrics")))
+            if "metrics" in fields
+            else ()
+        ),
     )
 
 
@@ -1185,6 +1222,12 @@ def parse_entry(data: object, subject: Subject | None = None) -> Record:
         env=parse_env(member(fields, "env")),
         tools=tuple(map(parse_tool, items(fields, "tools", empty=False))),
         config=optional(fields, "config", str, "a string"),
+        job=optional(fields, "job", str, "a string"),
+        metrics=tuple(
+            metric
+            for invocation in sorted(invoked, key=lambda found: found.started)
+            for metric in invocation.metrics
+        ),
         seconds=last.seconds,
         started=last.started,
         first=min(invocation.started for invocation in invoked),
@@ -1797,6 +1840,8 @@ class Comparison:
     # environment the series' did, so it is set against the base's
     # representative instead.
     ran_differently: bool = False
+    # The samples of the base's entry that ran what the series' ran.
+    against: tuple[Metric, ...] = ()
 
     @property
     def kind(self) -> str:
@@ -2061,9 +2106,8 @@ def compare_entry(
     same = [run for run in runs or (then,) if run.ran == now.ran]
     if not same:
         return compare_records(now, then, ran_differently=True)
-    return compare_records(
-        now, max(same, key=lambda run: (run.config == now.config, run.started))
-    )
+    then = max(same, key=lambda run: (run.config == now.config, run.started))
+    return dataclasses.replace(compare_records(now, then), against=then.metrics)
 
 
 # make's target that builds the Documentation directory after it, which the
@@ -4808,6 +4852,64 @@ def invocation_html(record: Record) -> str:
     return f'<p class="note text-muted-sm">{said}</p>'
 
 
+# The samples a side needs before the site says its numbers moved.
+ENOUGH = 3
+
+
+def figure(value: float) -> str:
+    """A number of a metric: whole when it is, else to six digits."""
+    return str(int(value)) if value.is_integer() else f"{value:.6g}"
+
+
+def spread(values: Sequence[float]) -> str:
+    """Samples as their median, then their range and how many they are."""
+    if not values:
+        return muted("none")
+    low, high = figure(min(values)), figure(max(values))
+    return f"{figure(median(values))} ({low}..{high}, {len(values)})"
+
+
+def moved(base: Sequence[float], series: Sequence[float], *, higher: bool) -> str:
+    """Whether a series' samples lie apart from its base's, and which way.
+
+    Nothing with fewer than ENOUGH samples a side: two ranges of one sample
+    each are apart by chance (designs/site.md).
+    """
+    if min(len(base), len(series)) < ENOUGH:
+        return ""
+    if min(series) <= max(base) and min(base) <= max(series):
+        return muted("within noise")
+    better = (min(series) > max(base)) == higher
+    return badge("pass", "better") if better else badge("fail", "worse")
+
+
+def metrics_html(entry: Record, comparison: Comparison | None, *, series: bool) -> str:
+    """The numbers an entry's runs measured, a series' beside its base's.
+
+    No verdict comes of them: a record's status says whether its benchmark
+    ran, and the page's counts are of that.
+    """
+    samples: dict[str, list[Metric]] = {}
+    for metric in entry.metrics:
+        samples.setdefault(metric.name, []).append(metric)
+    rows: list[list[str]] = []
+    for name, found in samples.items():
+        last, own = found[-1], [metric.value for metric in found]
+        row = [escape(f"{name} ({last.unit})" if last.unit else name)]
+        if series:
+            against = comparison.against if comparison else ()
+            base = [metric.value for metric in against if metric.name == name]
+            ratio = median(own) / median(base) if base and median(base) else None
+            row += [spread(base), spread(own)]
+            row += ["" if ratio is None else f"{ratio:.2f}"]
+            row += [moved(base, own, higher=last.higher)]
+        else:
+            row += [spread(own)]
+        rows.append(row)
+    head = ["Metric", "Base", "Series", "Series / base", ""]
+    return stats_table(head if series else ["Metric", "Samples"], rows) if rows else ""
+
+
 def entry_html(
     page: Page, key: str, *, anchor: str, base_ids: Mapping[str, str], tools: bool
 ) -> str:
@@ -4818,6 +4920,7 @@ def entry_html(
     if isinstance(entry, Record):
         body = command_html(entry) + (tools_html(entry) if tools else "")
         body += invocation_html(entry)
+        body += metrics_html(entry, comparison, series=page.series is not None)
         whole = url("", *output_file(key))
         base = base_href(page, key, root, base_ids)
         cited = cites(page.tree, page.series)
