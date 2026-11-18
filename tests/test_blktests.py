@@ -132,6 +132,8 @@ class BlktestsTest(unittest.TestCase):
     def test_a_pass(self) -> None:
         self.result("loop/nodev/loop/001", PASSED)
         self.result("loop/nodev/loop/001.full", "a verbose log\n")
+        # What a test left behind is no result.
+        self.result("loop/tmpdir.loop.001.qIt/img", "")
         said = self.file()
         written = (f"{BUILD}/blktests/nodev/loop/001.json", f"{BUILD}/config")
         written += ("linux/v1.2/series.json",)
@@ -191,8 +193,8 @@ class BlktestsTest(unittest.TestCase):
         self.result("block.stdout", STDOUT.replace("discard\n", "discard at all\n"))
         self.result("loop.stdout", STDOUT)
         said = self.file().splitlines()
-        why = "1 of 3 results did not run, and nothing kept their reason"
-        self.assertEqual(said[2], f"no record: {why}")
+        why = "1 of 4 results did not run, and nothing kept their reason"
+        self.assertEqual(said[3], f"no record: {why}")
         reasons = {
             "nodev/loop/004": "systemd version is older than 259\nand no udev runs\n",
             "nvme0n1/block/004": "the device does not discard\n",
@@ -204,6 +206,65 @@ class BlktestsTest(unittest.TestCase):
             self.assertEqual(entry["invocations"][0]["seconds"], 0)
         tests = self.records / BUILD / "blktests" / "nvme0n1" / "block"
         self.assertEqual([test.name for test in tests.iterdir()], ["004.json"])
+
+    def test_a_test_under_a_condition_lies_under_its_directory(self) -> None:
+        self.result("nvme/nodev_tr_loop_bd_device/nvme/012", NOT_RUN)
+        self.result("nvme/nodev_tr_loop_bd_file/nvme/012", NOT_RUN)
+        self.result("nvme/nvme0n1_tr_loop/nvme/035", NOT_RUN)
+        self.result("nvme/nvme0n1_tr_loop/nvme/034", PASSED)
+        self.result(
+            "nvme.stdout",
+            "nvme/012 (tr=loop bd=device) (run mkfs (xfs)) [not run]\n"
+            "    no xfs\n"
+            "nvme/012 (tr=loop bd=file) (run mkfs (xfs))   [not run]\n"
+            "    no xfs on a file\n"
+            "nvme/035 => nvme0n1 (tr=loop) (run mkfs) [not run]\n"
+            "    no passthru\n",
+        )
+        said = self.file().splitlines()
+        self.assertEqual(len(said), 6)
+        devices: Json = {"TEST_DEVS": "/dev/nvme0n1"}
+        skips: dict[str, tuple[str, Json]] = {
+            "nodev_tr_loop_bd_device/nvme/012": ("no xfs\n", {}),
+            "nodev_tr_loop_bd_file/nvme/012": ("no xfs on a file\n", {}),
+            "nvme0n1_tr_loop/nvme/035": ("no passthru\n", devices),
+        }
+        for test, (reason, env) in skips.items():
+            record = self.read(f"blktests/{test}.json")
+            self.assertEqual(record["subject"]["test"], test.partition("/")[2])
+            (entry,) = record["entries"]
+            self.assertEqual((entry["status"], entry["output"]), ("skip", reason))
+            self.assertEqual(entry["command"], f"check {record['subject']['test']}")
+            self.assertEqual(entry["env"], env)
+        (entry,) = self.read("blktests/nvme0n1_tr_loop/nvme/034.json")["entries"]
+        self.assertEqual(entry["env"], devices)
+
+    def test_a_group_that_did_not_run_is_a_skip_of_the_group(self) -> None:
+        self.result("loop/nodev/loop/001", PASSED)
+        self.result(
+            "block.stdout", STDOUT + f"nbd/***{' ' * 54} [not run]\n    no nbd\n"
+        )
+        os.utime(self.results / "block.stdout", (0, 1794938572))
+        self.file()
+        groups = {
+            "nvme0n1/block": "the group needs a module\n",
+            "nodev/nbd": "no nbd\n",
+        }
+        for path, reason in groups.items():
+            device, _, group = path.partition("/")
+            record = self.read(f"blktests/{path}.json")
+            self.assertEqual(record["subject"]["test"], group)
+            (entry,) = record["entries"]
+            verdict: Json = {"command": f"check {group}", "status": "skip", "exit": 0}
+            verdict["env"] = (
+                {} if device == "nodev" else {"TEST_DEVS": f"/dev/{device}"}
+            )
+            verdict["output"] = reason
+            self.assertEqual({name: entry[name] for name in verdict}, verdict)
+            when = {"started": "2026-11-17T18:02:52Z", "seconds": 0}
+            self.assertEqual(entry["invocations"], [INVOCATION | when])
+        said = self.file()
+        self.assertEqual(said, "no record: 3 of 3 results are recorded already\n")
 
     def test_the_qemu_of_the_machine_is_the_second_tool(self) -> None:
         fakes = self.root / "bin"

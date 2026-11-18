@@ -30,6 +30,7 @@ import re
 import shutil
 import sys
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -61,21 +62,40 @@ RESULT = re.compile(r"[0-9]+")
 # The files a failed test leaves beside its result, in the output's order.
 FAILURES = ("out.bad", "dmesg")
 FACTS = ("arch", "cpuinfo", "meminfo", "version")
-# A result's path from the results directory ends in its device, its group
-# and its number.
+# A result's path from the results directory ends in the directory of its
+# device, its group and its number.
 DEPTH = 3
 DATE = re.compile(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d")
+STAMP = "%Y-%m-%d %H:%M:%S"
 # An entry's verdict, by the status of a result.
 VERDICTS = {"pass": "pass", "fail": "fail", "not run": "skip"}
-# The line check prints of a test that did not run, on a device or on none.
-# The lines of its reason follow, indented. One of a whole group, loop/***,
-# names no test.
-NOT_RUN = re.compile(r"(\S+/\d+)(?: => (\S+))? \(.*\)\s*\[not run\]")
+# The line check prints of what did not run, on a device or on none: a test,
+# with its condition if it has one and its description, or a whole group,
+# loop/***, with neither. The lines of its reason follow, indented.
+NOT_RUN = re.compile(
+    r"(\S+?)(?:/\*\*\*|(/\d+))(?: => (\S+))?"
+    r"(?:(?: \(([^()]*)\))? \(.*\))?\s*\[not run\]"
+)
 INDENT = "    "
+# Why each test or group did not run, with the file that says so, by the
+# directory of its results and its name.
+type Reasons = dict[tuple[str, str], tuple[Path, list[str]]]
 
 
-def results_in(results: Path) -> list[Path]:
-    """Return the result files under a results directory, in order.
+@dataclass(frozen=True, slots=True)
+class Result:
+    """What check left of a test, or printed of a group it did not run."""
+
+    file: Path
+    # Where check put the result: the device, or nodev for a test that makes
+    # its own, then the condition the test ran under, as in nvme0n1_tr_loop.
+    directory: str
+    test: str
+    fields: dict[str, str]
+
+
+def results_in(results: Path) -> list[Result]:
+    """Return the results under a results directory, in the order of their files.
 
     A result lies in its group's directory under its device's. What lies
     above the device is what the run was asked for, a group or one test, so
@@ -87,18 +107,24 @@ def results_in(results: Path) -> list[Path]:
         if RESULT.fullmatch(file.name) and file.is_file()
     )
     return [
-        results / file
+        Result(
+            results / file,
+            file.parts[-DEPTH],
+            "/".join(file.parts[-2:]),
+            fields_of(results / file),
+        )
         for file in found
         if len(file.parts) >= DEPTH and file.parts[0] != "machine"
     ]
 
 
-def reasons_in(results: Path) -> dict[tuple[str, str], list[str]]:
-    """Return why each test did not run, by its device and name, as check printed.
+def reasons_in(results: Path) -> Reasons:
+    """Return why each test or group did not run, as check printed.
 
-    The last file that names a test gives its reason.
+    A group is named without ***. The last file that names a test or a
+    group gives its reason.
     """
-    reasons: dict[tuple[str, str], list[str]] = {}
+    reasons: Reasons = {}
     for file in sorted(results.glob("*.stdout")):
         # The reason being read. An indented line of anything else is kept
         # nowhere.
@@ -109,8 +135,30 @@ def reasons_in(results: Path) -> dict[tuple[str, str], list[str]]:
                 continue
             reason = []
             if found := NOT_RUN.fullmatch(line):
-                reasons[found[2] or "nodev", found[1]] = reason
+                # check names the directory as its device, then its condition
+                # with a _ for each space and each =.
+                postfix = "_" + re.sub("[ =]", "_", found[4]) if found[4] else ""
+                directory = (found[3] or "nodev") + postfix
+                reasons[directory, found[1] + (found[2] or "")] = file, reason
     return reasons
+
+
+def groups_in(reasons: Reasons) -> list[Result]:
+    """Return the groups check did not run, each as a result.
+
+    check writes no result of such a group: its date is when check last
+    wrote the file that names it.
+    """
+    return [
+        Result(file, directory, group, {"status": "not run", "date": date_of(file)})
+        for (directory, group), (file, _) in reasons.items()
+        if "/" not in group
+    ]
+
+
+def date_of(file: Path) -> str:
+    """Return when a file was last written, as a result's date."""
+    return datetime.fromtimestamp(file.stat().st_mtime, UTC).strftime(STAMP)
 
 
 def qemu_of(file: Path) -> Json:
@@ -148,24 +196,24 @@ def machine_of(facts: Path) -> Json:
 def started_of(file: Path, date: str) -> str:
     """Return when a test started, from the date of its result, taken as UTC."""
     need(DATE.fullmatch(date), f"{file} has no date: {date!r}")
-    at = datetime.strptime(date, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
+    at = datetime.strptime(date, STAMP).replace(tzinfo=UTC)
     return at.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def entry_of(
-    file: Path, fields: dict[str, str], ran: Json, top: str, reason: Sequence[str]
-) -> Json:
+def entry_of(result: Result, ran: Json, top: str, reason: Sequence[str]) -> Json:
     """Return a result as an entry, less who ran it and on what machine.
 
     The test ran on the device its result lies under: nodev is no device,
     for a test that makes its own. One that did not run has its reason.
     """
-    device, group = file.parent.parent.name, file.parent.name
+    file, fields = result.file, result.fields
+    # A condition follows the device's name after a _.
+    device = result.directory.partition("_")[0]
     status = fields.get("status")
     verdict = VERDICTS.get(status or "")
     need(verdict, f"{file} has the status {status!r}")
     devices = {} if device == "nodev" else {"TEST_DEVS": f"/dev/{device}"}
-    entry: Json = {"tools": ran["tools"], "command": f"check {group}/{file.name}"}
+    entry: Json = {"tools": ran["tools"], "command": f"check {result.test}"}
     entry |= {"env": devices, "config": ran["config"], "status": verdict, "exit": 0}
     if verdict == "skip":
         entry["output"] = output_of(reason, top)
@@ -232,22 +280,22 @@ def file_results(args: argparse.Namespace) -> None:
     who = {"producer": {"name": args.producer, "version": args.producer_version}}
     who |= {"origin": lab, "run": args.run}
     where = {"machine": machine_of(facts)}
-    found = [(file, fields_of(file)) for file in results_in(results)]
+    reasons = reasons_in(results)
+    found = results_in(results) + groups_in(reasons)
     need(found, f"{results} holds no result")
     # Every result is read before a record is written: one that cannot be
     # read leaves none.
-    reasons = reasons_in(results)
     runs: list[tuple[Path, Json, Json]] = []
-    for file, fields in found:
-        device, test = file.parent.parent.name, f"{file.parent.name}/{file.name}"
-        reason = reasons.get((device, test), [])
+    for result in found:
+        said = reasons.get((result.directory, result.test))
+        reason = said[1] if said else []
         # A skip has its reason as output (README.md, "Verdicts").
-        if fields.get("status") == "not run" and not any(reason):
+        if result.fields.get("status") == "not run" and not any(reason):
             continue
-        entry = entry_of(file, fields, ran, top, reason)
+        entry = entry_of(result, ran, top, reason)
         entry["invocations"] = [{**who, **entry["invocations"][0], **where}]
-        filed = build / "blktests" / device / f"{test}.json"
-        runs.append((filed, {**subject, "test": test}, entry))
+        filed = build / "blktests" / result.directory / f"{result.test}.json"
+        runs.append((filed, {**subject, "test": result.test}, entry))
     wrote = 0
     for filed, tested, entry in runs:
         if not recorded(filed, tested, entry):

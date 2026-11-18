@@ -160,7 +160,9 @@ a tool that exits 0 whatever it finds, where the producer reads the
 verdict from what the tool printed. A `skip` always has its reason as
 `output`. blktests writes no reason to a test's result, only to its
 standard output: a test that it did not run is a `skip` when the run
-kept what `check` printed, and leaves no record otherwise. A run stopped
+kept what `check` printed, and leaves no record otherwise. A group that
+it did not run is one `skip`, of the group: its command is `check
+block`, and it started when `check` last wrote that output. A run stopped
 on purpose, as when its producer cancels it, leaves nothing.
 
 ## Output
@@ -327,6 +329,9 @@ qemu/                                    another project
     `fstests/xfs_bs4k_ss512/generic/001.json`,
     `blktests/nvme0n1/block/003.json`, and
     `blktests/nodev/loop/001.json` for a test that makes its own device.
+    blktests names the directory, and adds the condition a test ran
+    under: `blktests/nvme0n1_tr_loop/nvme/035.json`. A group that did not
+    run is named alone, `blktests/nvme0n1/block.json`.
 
   The same tool run with other flags is another entry of the same
   record, as `checkpatch.pl` is with and without `--strict`.
